@@ -3,6 +3,7 @@ import { VesperHeader, VesperView } from './components/VesperHeader';
 import { LenderPortal } from './components/LenderPortal';
 import { IVRPhoneSimulator } from './components/IVRPhoneSimulator';
 import { ArchitectureView } from './components/ArchitectureView';
+import { AddisRealtimeTest } from './components/AddisRealtimeTest';
 import { SpikeEvaluationModal } from './components/SpikeEvaluationModal';
 import { IVRCallRecord } from './types';
 import { SAMPLE_STORIES } from './data/sampleStories';
@@ -29,9 +30,9 @@ export const App: React.FC = () => {
         transcript_language: sample.language,
         fields: sample.expectedFields,
         extraction_notes: sample.notes,
-        aiGrading: sample.gradingPreview,
+        aiGrading: sample.gradingPreview!,
       },
-      aiGrading: sample.gradingPreview,
+      aiGrading: sample.gradingPreview!,
       underwritingDecision: {
         status: index === 0 ? 'approved' : 'pending',
         decidedAt: index === 0 ? Date.now() - 3600 * 1000 : undefined,
@@ -80,6 +81,12 @@ export const App: React.FC = () => {
             onOpenDashboard={() => setCurrentView('dashboard')}
             onOpenSpike={() => setIsSpikeOpen(true)}
           />
+        )}
+
+        {currentView === 'addis_test' && (
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+            <AddisRealtimeTest onClose={() => setCurrentView('dashboard')} />
+          </div>
         )}
 
         {currentView === 'architecture' && <ArchitectureView />}

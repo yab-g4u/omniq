@@ -1,10 +1,19 @@
 export type Language = 'am' | 'om' | 'en';
 
-export type FieldStatus = 'applicant_stated' | 'missing' | 'supported' | 'contradiction';
+export type FieldStatus =
+  | 'STATED'
+  | 'VERIFIED'
+  | 'MISSING'
+  | 'CONTRADICTED'
+  | 'applicant_stated'
+  | 'missing'
+  | 'supported'
+  | 'contradiction';
 
 export interface ExtractedField {
   value: string | null;
   status: FieldStatus;
+  source?: string | null;
   quote: string | null;
   confidence?: number;
   isEdited?: boolean;
@@ -12,28 +21,43 @@ export interface ExtractedField {
 }
 
 export type FieldKey =
+  | 'owner_name'
   | 'business_name'
   | 'business_type'
+  | 'location'
+  | 'years_operating'
+  | 'employees'
+  | 'monthly_revenue'
+  | 'funding_requested'
+  | 'funding_purpose'
+  | 'business_license'
   | 'business_start_date'
   | 'location_description'
   | 'num_employees'
   | 'monthly_or_annual_sales'
   | 'machinery_equipment'
-  | 'funding_purpose'
   | 'funding_amount_requested'
   | 'beneficiaries_impact';
 
 export interface ExtractedFieldsMap {
+  owner_name?: ExtractedField;
   business_name: ExtractedField;
   business_type: ExtractedField;
-  business_start_date: ExtractedField;
-  location_description: ExtractedField;
-  num_employees: ExtractedField;
-  monthly_or_annual_sales: ExtractedField;
-  machinery_equipment: ExtractedField;
+  location?: ExtractedField;
+  years_operating?: ExtractedField;
+  employees?: ExtractedField;
+  monthly_revenue?: ExtractedField;
+  funding_requested?: ExtractedField;
   funding_purpose: ExtractedField;
-  funding_amount_requested: ExtractedField;
-  beneficiaries_impact: ExtractedField;
+  business_license?: ExtractedField;
+  // Aliases for compatibility
+  business_start_date?: ExtractedField;
+  location_description?: ExtractedField;
+  num_employees?: ExtractedField;
+  monthly_or_annual_sales?: ExtractedField;
+  machinery_equipment?: ExtractedField;
+  funding_amount_requested?: ExtractedField;
+  beneficiaries_impact?: ExtractedField;
 }
 
 export interface ApplicationExtractionResult {
@@ -44,6 +68,7 @@ export interface ApplicationExtractionResult {
   engine?: string;
   processedAt?: number;
   audioDurationSeconds?: number;
+  aiGrading?: BusinessGradingReport;
 }
 
 export type GradeLetter = 'A' | 'B' | 'C' | 'D';

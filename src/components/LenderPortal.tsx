@@ -145,17 +145,24 @@ export const LenderPortal: React.FC<LenderPortalProps> = ({
   };
 
   // Helper field titles
-  const FIELD_LABELS: Record<FieldKey, { title: string; subtitle: string; icon: any }> = {
+  const FIELD_LABELS: Partial<Record<FieldKey, { title: string; subtitle: string; icon: any }>> = {
     business_name: { title: 'Enterprise Legal / Trade Name', subtitle: 'የድርጅቱ ስም / Maqaa Daldalaa', icon: Building2 },
     business_type: { title: 'Core Business Activity & Sector', subtitle: 'የስራ ዘርፍ / Gosa Hojii', icon: TrendingUp },
     business_start_date: { title: 'Establishment Date / Track Record', subtitle: 'የተመሰረተበት ዓ.ም / Bara Eegalame', icon: Clock },
+    years_operating: { title: 'Establishment Date / Track Record', subtitle: 'የተመሰረተበት ዓ.ም / Bara Eegalame', icon: Clock },
     location_description: { title: 'Operating Premises & Kebele Location', subtitle: 'አድራሻ እና የስራ ቦታ / Bakka Hojii', icon: MapPin },
+    location: { title: 'Operating Premises & Kebele Location', subtitle: 'አድራሻ እና የስራ ቦታ / Bakka Hojii', icon: MapPin },
     num_employees: { title: 'Workforce & Full-time Staff', subtitle: 'የሰራተኛ ብዛት / Baay\'ina Hojjettootaa', icon: Users },
+    employees: { title: 'Workforce & Full-time Staff', subtitle: 'የሰራተኛ ብዛት / Baay\'ina Hojjettootaa', icon: Users },
     monthly_or_annual_sales: { title: 'Stated Cashflow / Monthly Revenue', subtitle: 'የወር ወይም ዓመታዊ ሽያጭ / Galii Ji\'aa', icon: DollarSign },
+    monthly_revenue: { title: 'Stated Cashflow / Monthly Revenue', subtitle: 'የወር ወይም ዓመታዊ ሽያጭ / Galii Ji\'aa', icon: DollarSign },
     machinery_equipment: { title: 'Productive Machinery & Equipment', subtitle: 'የስራ እቃዎችና ማሽነሪዎች / Meeshaalee', icon: Wrench },
+    business_license: { title: 'Trade License & Equipment Assets', subtitle: 'የንግድ ፈቃድና ማሽኖች / Hayyama Daldalaa', icon: Wrench },
     funding_purpose: { title: 'Capital Allocation & Loan Purpose', subtitle: 'የብድር ዓላማ / Kaayyoo Liqii', icon: HelpCircle },
     funding_amount_requested: { title: 'Requested Loan Amount (ETB)', subtitle: 'የተጠየቀው የብድር መጠን / Maallaqa Liqii', icon: DollarSign },
+    funding_requested: { title: 'Requested Loan Amount (ETB)', subtitle: 'የተጠየቀው የብድር መጠን / Maallaqa Liqii', icon: DollarSign },
     beneficiaries_impact: { title: 'Job Creation & Community Impact', subtitle: 'የስራ እድል ፈጠራ እና ተጠቃሚዎች / Faayidaa', icon: ShieldCheck },
+    owner_name: { title: 'Business Owner Name', subtitle: 'የባለቤቱ ስም / Maqaa Abbaa Qabeenyaa', icon: Building2 },
   };
 
   return (
@@ -577,15 +584,19 @@ export const LenderPortal: React.FC<LenderPortalProps> = ({
               {/* Fields Grid */}
               <div className="space-y-3">
                 {(Object.keys(FIELD_LABELS) as FieldKey[]).map((fieldKey) => {
-                  const meta = FIELD_LABELS[fieldKey];
+                  const meta = FIELD_LABELS[fieldKey] || {
+                    title: fieldKey.replace(/_/g, ' '),
+                    subtitle: fieldKey,
+                    icon: Building2,
+                  };
                   const field: ExtractedField =
                     activeCall.extractedData?.fields?.[fieldKey] || {
                       value: null,
                       status: 'missing',
                       quote: null,
                     };
-                  const Icon = meta.icon;
-                  const isStated = field.status === 'applicant_stated' && field.value;
+                  const Icon = meta.icon || Building2;
+                  const isStated = (field.status === 'applicant_stated' || field.status === 'STATED') && field.value;
 
                   return (
                     <div

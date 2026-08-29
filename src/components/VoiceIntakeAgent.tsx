@@ -824,8 +824,13 @@ export const VoiceIntakeAgent: React.FC<VoiceIntakeAgentProps> = ({
           {/* Grid of 10 Honest Field Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {(Object.keys(result.fields) as FieldKey[]).map((fieldKey) => {
-              const field: ExtractedField = result.fields[fieldKey];
-              const isStated = field.status === 'applicant_stated';
+              const field: ExtractedField = result.fields[fieldKey] || {
+                value: null,
+                status: 'MISSING',
+                source: null,
+                quote: null,
+              };
+              const isStated = field.status === 'applicant_stated' || field.status === 'STATED' || !!field.value;
               const label = (t as any)[`field_${fieldKey}`] || fieldKey;
 
               return (

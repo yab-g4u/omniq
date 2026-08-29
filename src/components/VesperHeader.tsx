@@ -10,7 +10,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 
-export type VesperView = 'dashboard' | 'ivr_phone' | 'architecture';
+export type VesperView = 'dashboard' | 'ivr_phone' | 'addis_test' | 'architecture';
 
 interface VesperHeaderProps {
   currentView: VesperView;
@@ -83,6 +83,18 @@ export const VesperHeader: React.FC<VesperHeaderProps> = ({
             </button>
 
             <button
+              onClick={() => setCurrentView('addis_test')}
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                currentView === 'addis_test'
+                  ? 'bg-white text-black shadow'
+                  : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+              }`}
+            >
+              <Radio className="w-4 h-4 text-teal-400" />
+              <span>Addis Realtime Test</span>
+            </button>
+
+            <button
               onClick={() => setCurrentView('architecture')}
               className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                 currentView === 'architecture'
@@ -119,30 +131,39 @@ export const VesperHeader: React.FC<VesperHeaderProps> = ({
         <div className="flex md:hidden items-center justify-around py-2 border-t border-white/10 text-xs">
           <button
             onClick={() => setCurrentView('dashboard')}
-            className={`flex items-center gap-1 px-3 py-1 rounded-md font-medium ${
+            className={`flex items-center gap-1 px-2.5 py-1 rounded-md font-medium ${
               currentView === 'dashboard' ? 'bg-white text-black' : 'text-neutral-400'
             }`}
           >
             <ShieldCheck className="w-3.5 h-3.5" />
-            <span>Lender Portal</span>
+            <span>Portal</span>
           </button>
           <button
             onClick={() => setCurrentView('ivr_phone')}
-            className={`flex items-center gap-1 px-3 py-1 rounded-md font-medium ${
+            className={`flex items-center gap-1 px-2.5 py-1 rounded-md font-medium ${
               currentView === 'ivr_phone' ? 'bg-white text-black' : 'text-neutral-400'
             }`}
           >
             <Phone className="w-3.5 h-3.5" />
-            <span>Phone Simulator</span>
+            <span>Phone</span>
+          </button>
+          <button
+            onClick={() => setCurrentView('addis_test')}
+            className={`flex items-center gap-1 px-2.5 py-1 rounded-md font-medium ${
+              currentView === 'addis_test' ? 'bg-white text-black' : 'text-neutral-400'
+            }`}
+          >
+            <Radio className="w-3.5 h-3.5" />
+            <span>Test</span>
           </button>
           <button
             onClick={() => setCurrentView('architecture')}
-            className={`flex items-center gap-1 px-3 py-1 rounded-md font-medium ${
+            className={`flex items-center gap-1 px-2.5 py-1 rounded-md font-medium ${
               currentView === 'architecture' ? 'bg-white text-black' : 'text-neutral-400'
             }`}
           >
             <Layers className="w-3.5 h-3.5" />
-            <span>Architecture</span>
+            <span>Arch</span>
           </button>
         </div>
       </div>
