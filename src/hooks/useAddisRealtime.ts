@@ -1,26 +1,28 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Language, ExtractedFieldsMap, ApplicationExtractionResult } from '../types';
-import { getApprovedPhrase } from '../data/phraseLibrary';
 import { extractFieldsDeterministically, computeBusinessGrade } from '../lib/deterministicExtractor';
 import {
   AddisRealtimeService,
-  AddisConnectionStage,
+  AddisRealtimeState,
+  DiagnosticsState,
   AddisLogEntry,
+  AddisErrorCategory,
 } from '../lib/addisRealtimeService';
 
-export interface TranscriptLogItem {
+export interface LiveUtterance {
   id: string;
-  speaker: 'agent' | 'caller' | 'system';
+  speaker: 'owner' | 'vesper' | 'system';
+  speakerLabel: string;
   text: string;
-  time: string;
-  isInterrupted?: boolean;
-  rawPcmDuration?: number;
+  timestamp: string;
+  language: Language;
+  confidence?: number;
 }
 
 export interface UseAddisRealtimeOptions {
   language: Language;
   onFieldUpdate?: (fields: ExtractedFieldsMap, notes: string) => void;
-  onTurnComplete?: (transcript: string, isCaller: boolean) => void;
+  onTurnComplete?: (transcriptText: string, isCaller: boolean) => void;
 }
 
 export function useAddisRealtime({
@@ -28,60 +30,67 @@ export function useAddisRealtime({
   onFieldUpdate,
   onTurnComplete,
 }: UseAddisRealtimeOptions) {
-  const [isConnected, setIsConnected] = useState<boolean>(false);
-  const [isConnecting, setIsConnecting] = useState<boolean>(false);
-  const [isStreaming, setIsStreaming] = useState<boolean>(false);
-  const [isVesperSpeaking, setIsVesperSpeaking] = useState<boolean>(false);
-  const [isUserSpeaking, setIsUserSpeaking] = useState<boolean>(false);
-  const [micVolume, setMicVolume] = useState<number>(0);
-  const [hasMicPermission, setHasMicPermission] = useState<boolean>(false);
-  const [micStatus, setMicStatus] = useState<'idle' | 'granted' | 'denied' | 'unsupported'>('idle');
-  const [stage, setStage] = useState<AddisConnectionStage>('IDLE');
+  const [state, setState] = useState<AddisRealtimeState>('IDLE');
   const [logs, setLogs] = useState<AddisLogEntry[]>([]);
-  const [transcriptLogs, setTranscriptLogs] = useState<TranscriptLogItem[]>([]);
-  const [currentVesperText, setCurrentVesperText] = useState<string>('');
-  const [currentCallerText, setCurrentCallerText] = useState<string>('');
-  const [turnCount, setTurnCount] = useState<number>(0);
+  const [transcriptLogs, setTranscriptLogs] = useState<LiveUtterance[]>([]);
   const [extractedData, setExtractedData] = useState<ApplicationExtractionResult | null>(null);
   const [isExtracting, setIsExtracting] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
+  const [errorCategory, setErrorCategory] = useState<AddisErrorCategory | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const [diagnostics, setDiagnostics] = useState<DiagnosticsState>({
+    hasMicPermission: false,
+    inputAudioContextState: 'closed',
+    inputSampleRate: 0,
+    outputAudioContextState: 'closed',
+    outputSampleRate: 0,
+    webSocketState: 'CLOSED',
+    setupComplete: false,
+    isAudioStreaming: false,
+    lastAudioChunkSentTime: null,
+    lastAudioChunkSentBytes: 0,
+    lastServerEvent: null,
+    lastAiAudioReceivedTime: null,
+    lastAiAudioReceivedBytes: 0,
+    playbackState: 'IDLE',
+    turnComplete: false,
+    webSocketCloseCode: null,
+    webSocketCloseReason: null,
+    lastServerError: null,
+    micLevel: 0,
+    errorCategory: null,
+  });
 
   const serviceRef = useRef<AddisRealtimeService | null>(null);
-  const accumulatedConversationRef = useRef<{ speaker: string; text: string }[]>([]);
+  const fullConversationRef = useRef<{ speaker: string; text: string }[]>([]);
 
-  // Format time mm:ss
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  const formatTimestamp = () => {
+    const now = new Date();
+    return `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
   };
 
-  // Trigger live honest extraction after turns (Deterministic engine with zero hallucinations)
-  const triggerIncrementalExtraction = useCallback(
-    (fullTranscriptText: string, lang: Language) => {
-      if (!fullTranscriptText.trim()) return;
+  const runExtraction = useCallback(
+    (transcriptText: string, lang: Language) => {
+      if (!transcriptText.trim()) return;
       setIsExtracting(true);
       try {
-        const localFields = extractFieldsDeterministically(fullTranscriptText, lang);
-        const grading = computeBusinessGrade(localFields);
+        const fields = extractFieldsDeterministically(transcriptText, lang);
+        const grading = computeBusinessGrade(fields);
 
-        const localResult: ApplicationExtractionResult = {
-          transcript: fullTranscriptText,
-          transcript_language: lang === 'am' ? 'am' : lang === 'om' ? 'om' : 'en',
-          fields: localFields,
-          extraction_notes: 'Extracted in real-time from Addis voice transcription with verbatim source quotes.',
+        const result: ApplicationExtractionResult = {
+          transcript: transcriptText,
+          transcript_language: lang,
+          fields,
+          extraction_notes: 'Extracted live from Addis AI voice transcript.',
           engine: 'addis-realtime-deterministic',
           processedAt: Date.now(),
           aiGrading: grading,
         };
 
-        setExtractedData(localResult);
-
-        if (onFieldUpdate) {
-          onFieldUpdate(localFields, localResult.extraction_notes);
-        }
-      } catch (e) {
-        console.error('[Local Extraction Error]:', e);
+        setExtractedData(result);
+        onFieldUpdate?.(fields, result.extraction_notes);
+      } catch (err) {
+        console.error('[Extraction Error]:', err);
       } finally {
         setIsExtracting(false);
       }
@@ -89,65 +98,118 @@ export function useAddisRealtime({
     [onFieldUpdate]
   );
 
-  // Initialize service
+  const processUserAudioSTT = useCallback(
+    async (pcmBlob: Blob, currentLang: Language) => {
+      try {
+        const arrayBuffer = await pcmBlob.arrayBuffer();
+        const bytes = new Uint8Array(arrayBuffer);
+        let binary = '';
+        for (let i = 0; i < bytes.byteLength; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        const b64Audio = btoa(binary);
+
+        const res = await fetch('/api/addis/stt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            audioBase64: b64Audio,
+            mimeType: 'audio/pcm',
+            languageCode: currentLang,
+          }),
+        });
+
+        if (!res.ok) return;
+
+        const data = await res.json();
+        const text = data.text || data.transcription || data.result?.text || '';
+        const confidence = data.confidence ?? data.result?.confidence ?? 0.95;
+
+        if (text && text.trim()) {
+          const cleanText = text.trim();
+          const utterance: LiveUtterance = {
+            id: `owner-${Date.now()}`,
+            speaker: 'owner',
+            speakerLabel: 'OWNER',
+            text: cleanText,
+            timestamp: formatTimestamp(),
+            language: currentLang,
+            confidence,
+          };
+
+          setTranscriptLogs((prev: LiveUtterance[]) => [...prev, utterance]);
+          fullConversationRef.current.push({ speaker: 'Owner', text: cleanText });
+
+          onTurnComplete?.(cleanText, true);
+
+          const fullText = fullConversationRef.current.map((t: { speaker: string; text: string }) => `${t.speaker}: ${t.text}`).join('\n');
+          runExtraction(fullText, currentLang);
+        }
+      } catch (sttErr) {
+        console.warn('Addis STT process warning:', sttErr);
+      }
+    },
+    [onTurnComplete, runExtraction]
+  );
+
   useEffect(() => {
     const service = new AddisRealtimeService({
-      onStageChange: (newStage) => {
-        setStage(newStage);
-        if (newStage === 'WEBSOCKET_CONNECTED' || newStage === 'SETUP_COMPLETE' || newStage === 'STREAMING_AUDIO') {
-          setIsConnected(true);
-          setIsConnecting(false);
-        }
-        if (newStage === 'STREAMING_AUDIO') {
-          setIsStreaming(true);
-        }
-        if (newStage === 'IDLE' || newStage === 'CLOSED') {
-          setIsConnected(false);
-          setIsStreaming(false);
-        }
+      onStateChange: (newState) => setState(newState),
+      onDiagnosticsUpdate: (diag) => setDiagnostics(diag),
+      onLog: (newLog) => setLogs((prev: AddisLogEntry[]) => [...prev.slice(-150), newLog]),
+      onVesperSpeechText: (text) => {
+        if (!text.trim()) return;
+        const utterance: LiveUtterance = {
+          id: `vesper-${Date.now()}`,
+          speaker: 'vesper',
+          speakerLabel: 'VESPER',
+          text: text.trim(),
+          timestamp: formatTimestamp(),
+          language,
+        };
+        setTranscriptLogs((prev: LiveUtterance[]) => [...prev, utterance]);
+        fullConversationRef.current.push({ speaker: 'Vesper', text: text.trim() });
+        onTurnComplete?.(text.trim(), false);
       },
-      onLog: (newLog) => {
-        setLogs((prev) => [...prev.slice(-100), newLog]);
+      onUserSpeechSegment: (blob) => {
+        processUserAudioSTT(blob, language);
       },
-      onMicVolumeChange: (vol) => setMicVolume(vol),
-      onVesperSpeakingChange: (speaking) => setIsVesperSpeaking(speaking),
-      onUserSpeakingChange: (speaking) => setIsUserSpeaking(speaking),
-      onError: (err) => setError(err),
-      onClose: (code, reason) => {
-        setIsConnected(false);
-        setIsStreaming(false);
-      },
-      onTranscriptReceived: (text, speaker) => {
-        if (speaker === 'vesper') {
-          setCurrentVesperText(text);
-          const newLog: TranscriptLogItem = {
-            id: `vesper-${Date.now()}`,
-            speaker: 'agent',
-            text,
-            time: formatTime(turnCount * 8 + 3),
-          };
-          setTranscriptLogs((prev) => [...prev, newLog]);
-          accumulatedConversationRef.current.push({ speaker: 'Vesper', text });
-          onTurnComplete?.(text, false);
-        } else {
-          setCurrentCallerText(text);
-          const callerLog: TranscriptLogItem = {
-            id: `caller-${Date.now()}`,
-            speaker: 'caller',
-            text,
-            time: formatTime(turnCount * 8 + 1),
-          };
-          setTranscriptLogs((prev) => [...prev, callerLog]);
-          accumulatedConversationRef.current.push({ speaker: 'Caller', text });
-          setTurnCount((c) => c + 1);
-          onTurnComplete?.(text, true);
+      onSetupComplete: () => {
+        let greetingText = "Hello, I'm Vesper. I'll help you prepare your business funding application.";
+        if (language === 'am') {
+          greetingText = 'ሰላም፣ እኔ ቬስፐር ነኝ። ለንግድዎ የገንዘብ ድጋፍ ማመልከቻ ላዘጋጅ እረዳዎታለሁ።';
+        } else if (language === 'om') {
+          greetingText = 'Baga nagaan dhuftan! Ani Vesper dha; iyyannoo liqii keessan qopheessuuf isin gargaara.';
+        }
 
-          // Trigger extraction on full transcript
-          const fullDialogue = accumulatedConversationRef.current
-            .map((t) => `${t.speaker}: ${t.text}`)
-            .join('\n');
-          triggerIncrementalExtraction(fullDialogue, language);
-        }
+        const now = new Date();
+        let hours = now.getHours();
+        const minutes = now.getMinutes().toString().padStart(2, '0');
+        const seconds = now.getSeconds().toString().padStart(2, '0');
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+        hours = hours % 12;
+        hours = hours ? hours : 12;
+        const timestampStr = `${hours.toString().padStart(2, '0')}:${minutes}:${seconds} ${ampm}`;
+
+        const greetingUtterance: LiveUtterance = {
+          id: `greeting-${Date.now()}`,
+          speaker: 'vesper',
+          speakerLabel: 'VESPER',
+          text: greetingText,
+          timestamp: timestampStr,
+          language,
+        };
+
+        setTranscriptLogs([greetingUtterance]);
+        fullConversationRef.current = [{ speaker: 'Vesper', text: greetingText }];
+
+        // Speak greeting out loud & send prompt frame over WebSocket
+        serviceRef.current?.speakGreeting(greetingText, language);
+        serviceRef.current?.sendClientPrompt(greetingText);
+      },
+      onError: (cat, msg) => {
+        setErrorCategory(cat);
+        setErrorMessage(msg);
       },
     });
 
@@ -156,157 +218,25 @@ export function useAddisRealtime({
     return () => {
       service.stop();
     };
-  }, [language, triggerIncrementalExtraction, onTurnComplete, turnCount]);
+  }, [language, onTurnComplete, processUserAudioSTT]);
 
-  // Connect to Addis Realtime Audio WebSocket & Start Mic
   const startSession = useCallback(
-    async (callStartTime = 0) => {
-      try {
-        setError(null);
-        setIsConnecting(true);
+    async (apiKey?: string) => {
+      setErrorCategory(null);
+      setErrorMessage(null);
+      setTranscriptLogs([]);
+      fullConversationRef.current = [];
 
-        if (!serviceRef.current) return;
-
-        // 1. Connect WebSocket
-        const connected = await serviceRef.current.connect();
-        if (!connected) {
-          setIsConnecting(false);
-          return;
-        }
-
-        // 2. Start Microphone
-        const micGranted = await serviceRef.current.startMicrophone();
-        setHasMicPermission(micGranted);
-        setMicStatus(micGranted ? 'granted' : 'denied');
-
-        // Initial greeting
-        const greetingText =
-          getApprovedPhrase('greetings', 'welcome', language) ||
-          (language === 'am'
-            ? 'እንኳን ወደ 8800 የነፃ የንግድ ብድር አገልግሎት በደህና መጡ። እኔ ቬስፐር ነኝ፤ የብድር ማመልከቻዎን ለማዘጋጀት እረዳዎታለሁ።'
-            : language === 'om'
-            ? 'Baga gara tajaajila liqii bilisaa 8800 nagaan dhuftan. Ani Vesper dha; iyyannoo liqii keessan qopheessuuf isin gargaara.'
-            : 'Welcome to the 8800 Toll-Free Business Funding Hotline. I am Vesper, your voice underwriting assistant.');
-
-        setCurrentVesperText(greetingText);
-        const initialLog: TranscriptLogItem = {
-          id: `log-${Date.now()}`,
-          speaker: 'agent',
-          text: greetingText,
-          time: '00:01',
-        };
-        setTranscriptLogs([initialLog]);
-        accumulatedConversationRef.current = [{ speaker: 'Vesper', text: greetingText }];
-      } catch (err: any) {
-        const fullErr = err?.message || 'Addis Realtime session initialization failed.';
-        setIsConnecting(false);
-        setError(fullErr);
-      }
+      if (!serviceRef.current) return false;
+      return await serviceRef.current.startSession(apiKey);
     },
-    [language]
+    []
   );
 
-  // Submit intentional caller turn
-  const submitCallerTurn = useCallback(
-    async (spokenText: string, currentCallSeconds = 0) => {
-      if (!spokenText.trim()) return;
-
-      // 1. Interrupt any current audio
-      if (serviceRef.current) {
-        serviceRef.current.interruptPlayback();
-      }
-
-      // 2. Log Caller Turn
-      const callerTime = formatTime(currentCallSeconds);
-      const callerLog: TranscriptLogItem = {
-        id: `caller-${Date.now()}`,
-        speaker: 'caller',
-        text: spokenText,
-        time: callerTime,
-      };
-
-      setTranscriptLogs((prev) => [...prev, callerLog]);
-      accumulatedConversationRef.current.push({ speaker: 'Caller', text: spokenText });
-      const nextTurn = turnCount + 1;
-      setTurnCount(nextTurn);
-
-      // 3. Immediately trigger live extraction into the table
-      const fullText = accumulatedConversationRef.current
-        .map((t) => `${t.speaker}: ${t.text}`)
-        .join('\n');
-      triggerIncrementalExtraction(fullText, language);
-
-      // 4. Request Next Natural Vesper Response from Server
-      try {
-        const response = await fetch('/api/ivr/voice-turn', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            language,
-            stepId: Math.min(nextTurn, 7),
-            userSpokenText: spokenText,
-          }),
-        });
-
-        const data = await response.json();
-        const nextResponseText =
-          data.responseText || 'እናመሰግናለን። እባክዎ የስራዎን ዝርዝር ይንገሩን።';
-
-        setCurrentVesperText(nextResponseText);
-        const nextTime = formatTime(currentCallSeconds + 2);
-        const agentLog: TranscriptLogItem = {
-          id: `agent-${Date.now()}`,
-          speaker: 'agent',
-          text: nextResponseText,
-          time: nextTime,
-        };
-
-        setTranscriptLogs((prev) => [...prev, agentLog]);
-        accumulatedConversationRef.current.push({ speaker: 'Vesper', text: nextResponseText });
-
-        // Synthesize via Addis TTS if available
-        try {
-          const ttsRes = await fetch('/api/addis/tts', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              text: nextResponseText,
-              language,
-            }),
-          });
-          const ttsData = await ttsRes.json();
-          if (ttsData.audioBase64) {
-            const audio = new Audio(ttsData.audioBase64);
-            audio.play().catch((e) => console.warn('TTS playback note:', e));
-          }
-        } catch {
-          // ignore TTS audio error
-        }
-      } catch (err: any) {
-        console.error('[Addis Turn Error]:', err);
-      }
-    },
-    [language, turnCount, triggerIncrementalExtraction]
-  );
-
-  // Stop Session
   const stopSession = useCallback(() => {
     if (serviceRef.current) {
       serviceRef.current.stop();
     }
-    setIsConnected(false);
-    setIsConnecting(false);
-    setIsStreaming(false);
-    setIsVesperSpeaking(false);
-    setIsUserSpeaking(false);
-  }, []);
-
-  const setupMicrophone = useCallback(async () => {
-    if (!serviceRef.current) return false;
-    const granted = await serviceRef.current.startMicrophone();
-    setHasMicPermission(granted);
-    setMicStatus(granted ? 'granted' : 'denied');
-    return granted;
   }, []);
 
   const interruptVesperAudio = useCallback(() => {
@@ -315,30 +245,26 @@ export function useAddisRealtime({
     }
   }, []);
 
+  const sendClientPrompt = useCallback((text: string) => {
+    if (serviceRef.current) {
+      serviceRef.current.sendClientPrompt(text);
+    }
+  }, []);
+
   return {
-    isConnected,
-    isConnecting,
-    isStreaming,
-    isVesperSpeaking,
-    isUserSpeaking,
-    micVolume,
-    hasMicPermission,
-    micStatus,
-    setupMicrophone,
-    stage,
+    state,
+    diagnostics,
     logs,
     transcriptLogs,
-    currentVesperText,
-    currentCallerText,
-    turnCount,
     extractedData,
     isExtracting,
-    error,
+    errorCategory,
+    errorMessage,
     startSession,
     stopSession,
     interruptVesperAudio,
-    submitCallerTurn,
-    triggerIncrementalExtraction,
+    sendClientPrompt,
     setTranscriptLogs,
+    runExtraction,
   };
 }

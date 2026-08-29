@@ -3,44 +3,16 @@ import { VesperHeader, VesperView } from './components/VesperHeader';
 import { LenderPortal } from './components/LenderPortal';
 import { IVRPhoneSimulator } from './components/IVRPhoneSimulator';
 import { ArchitectureView } from './components/ArchitectureView';
-import { AddisRealtimeTest } from './components/AddisRealtimeTest';
 import { SpikeEvaluationModal } from './components/SpikeEvaluationModal';
 import { IVRCallRecord } from './types';
 import { SAMPLE_STORIES } from './data/sampleStories';
 
 export const App: React.FC = () => {
-  const [currentView, setCurrentView] = useState<VesperView>('dashboard');
+  const [currentView, setCurrentView] = useState<VesperView>('ivr_phone');
   const [isSpikeOpen, setIsSpikeOpen] = useState<boolean>(false);
 
-  // Initialize initial calls from sample stories
-  const [calls, setCalls] = useState<IVRCallRecord[]>(() => {
-    return SAMPLE_STORIES.map((sample, index) => ({
-      id: `call-${sample.id}`,
-      callerPhoneNumber: sample.phone,
-      callerName: sample.ownerName,
-      region: sample.location,
-      callDurationSeconds: sample.audioDuration,
-      timestamp: Date.now() - (index + 1) * 3600 * 1000 * 4,
-      language: sample.language,
-      callStatus: 'completed',
-      ivrTollFreeNumber: '8800',
-      transcript: sample.transcript,
-      extractedData: {
-        transcript: sample.transcript,
-        transcript_language: sample.language,
-        fields: sample.expectedFields,
-        extraction_notes: sample.notes,
-        aiGrading: sample.gradingPreview!,
-      },
-      aiGrading: sample.gradingPreview!,
-      underwritingDecision: {
-        status: index === 0 ? 'approved' : 'pending',
-        decidedAt: index === 0 ? Date.now() - 3600 * 1000 : undefined,
-        decidedBy: index === 0 ? 'Senior Credit Officer' : undefined,
-        approvedAmount: index === 0 ? '450,000 ETB' : undefined,
-      },
-    }));
-  });
+  // Initialize call records list for live completed intake sessions
+  const [calls, setCalls] = useState<IVRCallRecord[]>([]);
 
   // When a new call completes via IVR simulator
   const handleCallCompleted = (newCall: IVRCallRecord) => {
@@ -81,12 +53,6 @@ export const App: React.FC = () => {
             onOpenDashboard={() => setCurrentView('dashboard')}
             onOpenSpike={() => setIsSpikeOpen(true)}
           />
-        )}
-
-        {currentView === 'addis_test' && (
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
-            <AddisRealtimeTest onClose={() => setCurrentView('dashboard')} />
-          </div>
         )}
 
         {currentView === 'architecture' && <ArchitectureView />}
