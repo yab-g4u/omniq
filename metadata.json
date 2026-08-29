@@ -1,0 +1,11 @@
+{
+  "name": "Vesper.ai — Toll-Free IVR Voice Agent & AI Business Grading Portal",
+  "description": "Toll-free IVR voice assistant for feature-phone users to apply for funding in Amharic, Oromo, and English, with automated transcription, honest field extraction, and an AI credit underwriting and grading portal for lenders.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
+
