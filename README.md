@@ -16,7 +16,6 @@ Over 75% of informal micro-entrepreneurs in emerging markets lack smartphones an
 
 ## Demo
 
-- **Live Application:** [Live Preview on AI Studio](https://ais-dev-tfcv3lyxce7egsfisccvm7-164876459215.europe-west2.run.app)
 - **Toll-Free Telephony Simulator:** Built-in Nokia/2G interactive keypad in the web console (`8800`)
 
 <!-- TODO: add demo GIF — record a call from language menu through to extracted results appearing -->
