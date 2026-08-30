@@ -8,6 +8,13 @@ import {
   AddisLogEntry,
   AddisErrorCategory,
 } from '../lib/addisRealtimeService';
+import {
+  getGreeting,
+  getEligibilityQuestion,
+  getEligibilityResponse,
+  evaluateRegistrationAnswer,
+  evaluateYearsOperatingAnswer,
+} from '../lib/library';
 
 export interface LiveUtterance {
   id: string;
@@ -18,6 +25,15 @@ export interface LiveUtterance {
   language: Language;
   confidence?: number;
 }
+
+export type EligibilityStep =
+  | 'IDLE'
+  | 'STEP1_GREETING'
+  | 'STEP2_Q1'
+  | 'STEP3_Q2'
+  | 'STEP4_ELIGIBLE'
+  | 'PASSED_ADDIS_AI'
+  | 'INELIGIBLE_ENDED';
 
 export interface UseAddisRealtimeOptions {
   language: Language;
@@ -31,6 +47,14 @@ export function useAddisRealtime({
   onTurnComplete,
 }: UseAddisRealtimeOptions) {
   const [state, setState] = useState<AddisRealtimeState>('IDLE');
+  const [eligibilityStep, setEligibilityStep] = useState<EligibilityStep>('IDLE');
+  const eligibilityStepRef = useRef<EligibilityStep>('IDLE');
+
+  const updateEligibilityStep = (step: EligibilityStep) => {
+    setEligibilityStep(step);
+    eligibilityStepRef.current = step;
+  };
+
   const [logs, setLogs] = useState<AddisLogEntry[]>([]);
   const [transcriptLogs, setTranscriptLogs] = useState<LiveUtterance[]>([]);
   const [extractedData, setExtractedData] = useState<ApplicationExtractionResult | null>(null);
@@ -98,6 +122,125 @@ export function useAddisRealtime({
     [onFieldUpdate]
   );
 
+  // Core eligibility evaluation and turn handling
+  const handleUserSpeechText = useCallback(
+    async (userText: string, currentLang: Language) => {
+      if (!userText.trim()) return;
+      const cleanText = userText.trim();
+
+      const userUtterance: LiveUtterance = {
+        id: `owner-${Date.now()}`,
+        speaker: 'owner',
+        speakerLabel: 'OWNER',
+        text: cleanText,
+        timestamp: formatTimestamp(),
+        language: currentLang,
+      };
+
+      setTranscriptLogs((prev: LiveUtterance[]) => [...prev, userUtterance]);
+      fullConversationRef.current.push({ speaker: 'Owner', text: cleanText });
+      onTurnComplete?.(cleanText, true);
+
+      const fullText = fullConversationRef.current.map((t) => `${t.speaker}: ${t.text}`).join('\n');
+      runExtraction(fullText, currentLang);
+
+      const currentStep = eligibilityStepRef.current;
+
+      // STEP 2 Evaluation
+      if (currentStep === 'STEP2_Q1') {
+        const isRegistered = evaluateRegistrationAnswer(cleanText);
+        if (isRegistered === false) {
+          // Failed Q1 -> Ineligible
+          updateEligibilityStep('INELIGIBLE_ENDED');
+          const ineligText = getEligibilityResponse(currentLang, false);
+          const ineligUtterance: LiveUtterance = {
+            id: `inelig-${Date.now()}`,
+            speaker: 'vesper',
+            speakerLabel: 'VESPER',
+            text: ineligText,
+            timestamp: formatTimestamp(),
+            language: currentLang,
+          };
+          setTranscriptLogs((prev) => [...prev, ineligUtterance]);
+          fullConversationRef.current.push({ speaker: 'Vesper', text: ineligText });
+
+          await serviceRef.current?.speakTTS(ineligText, currentLang);
+          serviceRef.current?.stop();
+          return;
+        }
+
+        // Passed Q1 -> Ask Q2
+        updateEligibilityStep('STEP3_Q2');
+        const q2Text = getEligibilityQuestion(currentLang, 2);
+        const q2Utterance: LiveUtterance = {
+          id: `q2-${Date.now()}`,
+          speaker: 'vesper',
+          speakerLabel: 'VESPER',
+          text: q2Text,
+          timestamp: formatTimestamp(),
+          language: currentLang,
+        };
+        setTranscriptLogs((prev) => [...prev, q2Utterance]);
+        fullConversationRef.current.push({ speaker: 'Vesper', text: q2Text });
+
+        await serviceRef.current?.speakTTS(q2Text, currentLang);
+        return;
+      }
+
+      // STEP 3 Evaluation
+      if (currentStep === 'STEP3_Q2') {
+        const is2Years = evaluateYearsOperatingAnswer(cleanText);
+        if (is2Years === false) {
+          // Failed Q2 -> Ineligible
+          updateEligibilityStep('INELIGIBLE_ENDED');
+          const ineligText = getEligibilityResponse(currentLang, false);
+          const ineligUtterance: LiveUtterance = {
+            id: `inelig-${Date.now()}`,
+            speaker: 'vesper',
+            speakerLabel: 'VESPER',
+            text: ineligText,
+            timestamp: formatTimestamp(),
+            language: currentLang,
+          };
+          setTranscriptLogs((prev) => [...prev, ineligUtterance]);
+          fullConversationRef.current.push({ speaker: 'Vesper', text: ineligText });
+
+          await serviceRef.current?.speakTTS(ineligText, currentLang);
+          serviceRef.current?.stop();
+          return;
+        }
+
+        // Passed BOTH Q1 & Q2 -> ELIGIBLE!
+        updateEligibilityStep('STEP4_ELIGIBLE');
+        const eligText = getEligibilityResponse(currentLang, true);
+        const eligUtterance: LiveUtterance = {
+          id: `elig-${Date.now()}`,
+          speaker: 'vesper',
+          speakerLabel: 'VESPER',
+          text: eligText,
+          timestamp: formatTimestamp(),
+          language: currentLang,
+        };
+        setTranscriptLogs((prev) => [...prev, eligUtterance]);
+        fullConversationRef.current.push({ speaker: 'Vesper', text: eligText });
+
+        await serviceRef.current?.speakTTS(eligText, currentLang);
+
+        // Hand over control to real Addis AI agent with Persona
+        updateEligibilityStep('PASSED_ADDIS_AI');
+        const personaPrompt = `You are Sequa SME Support, an Ethiopian SME funding assistant. Your job is to have a friendly natural conversation with a small-business owner and understand their business. Do not sound like a questionnaire. Ask one natural follow-up question at a time. Never invent information. Applicant input: "${cleanText}".`;
+        serviceRef.current?.sendClientPrompt(personaPrompt);
+        return;
+      }
+
+      if (currentStep === 'PASSED_ADDIS_AI') {
+        // Natural conversation with Addis AI
+        serviceRef.current?.sendClientPrompt(cleanText);
+      }
+    },
+    [onTurnComplete, runExtraction]
+  );
+
   const processUserAudioSTT = useCallback(
     async (pcmBlob: Blob, currentLang: Language) => {
       try {
@@ -123,33 +266,15 @@ export function useAddisRealtime({
 
         const data = await res.json();
         const text = data.text || data.transcription || data.result?.text || '';
-        const confidence = data.confidence ?? data.result?.confidence ?? 0.95;
 
         if (text && text.trim()) {
-          const cleanText = text.trim();
-          const utterance: LiveUtterance = {
-            id: `owner-${Date.now()}`,
-            speaker: 'owner',
-            speakerLabel: 'OWNER',
-            text: cleanText,
-            timestamp: formatTimestamp(),
-            language: currentLang,
-            confidence,
-          };
-
-          setTranscriptLogs((prev: LiveUtterance[]) => [...prev, utterance]);
-          fullConversationRef.current.push({ speaker: 'Owner', text: cleanText });
-
-          onTurnComplete?.(cleanText, true);
-
-          const fullText = fullConversationRef.current.map((t: { speaker: string; text: string }) => `${t.speaker}: ${t.text}`).join('\n');
-          runExtraction(fullText, currentLang);
+          await handleUserSpeechText(text, currentLang);
         }
       } catch (sttErr) {
         console.warn('Addis STT process warning:', sttErr);
       }
     },
-    [onTurnComplete, runExtraction]
+    [handleUserSpeechText]
   );
 
   useEffect(() => {
@@ -174,38 +299,43 @@ export function useAddisRealtime({
       onUserSpeechSegment: (blob) => {
         processUserAudioSTT(blob, language);
       },
-      onSetupComplete: () => {
-        let greetingText = "Hello, I'm Vesper. I'll help you prepare your business funding application.";
-        if (language === 'am') {
-          greetingText = 'ሰላም፣ እኔ ቬስፐር ነኝ። ለንግድዎ የገንዘብ ድጋፍ ማመልከቻ ላዘጋጅ እረዳዎታለሁ።';
-        } else if (language === 'om') {
-          greetingText = 'Baga nagaan dhuftan! Ani Vesper dha; iyyannoo liqii keessan qopheessuuf isin gargaara.';
-        }
-
-        const now = new Date();
-        let hours = now.getHours();
-        const minutes = now.getMinutes().toString().padStart(2, '0');
-        const seconds = now.getSeconds().toString().padStart(2, '0');
-        const ampm = hours >= 12 ? 'PM' : 'AM';
-        hours = hours % 12;
-        hours = hours ? hours : 12;
-        const timestampStr = `${hours.toString().padStart(2, '0')}:${minutes}:${seconds} ${ampm}`;
+      onSetupComplete: async () => {
+        // STEP 1 — Initial Greeting from library.ts
+        updateEligibilityStep('STEP1_GREETING');
+        const greetingText = getGreeting(language);
 
         const greetingUtterance: LiveUtterance = {
           id: `greeting-${Date.now()}`,
           speaker: 'vesper',
           speakerLabel: 'VESPER',
           text: greetingText,
-          timestamp: timestampStr,
+          timestamp: formatTimestamp(),
           language,
         };
 
         setTranscriptLogs([greetingUtterance]);
         fullConversationRef.current = [{ speaker: 'Vesper', text: greetingText }];
 
-        // Speak greeting out loud & send prompt frame over WebSocket
-        serviceRef.current?.speakGreeting(greetingText, language);
-        serviceRef.current?.sendClientPrompt(greetingText);
+        // Speak greeting out loud via Addis AI Text-to-Speech
+        await serviceRef.current?.speakTTS(greetingText, language);
+
+        // STEP 2 — Eligibility Question 1
+        updateEligibilityStep('STEP2_Q1');
+        const q1Text = getEligibilityQuestion(language, 1);
+        const q1Utterance: LiveUtterance = {
+          id: `q1-${Date.now()}`,
+          speaker: 'vesper',
+          speakerLabel: 'VESPER',
+          text: q1Text,
+          timestamp: formatTimestamp(),
+          language,
+        };
+
+        setTranscriptLogs((prev) => [...prev, q1Utterance]);
+        fullConversationRef.current.push({ speaker: 'Vesper', text: q1Text });
+
+        // Speak Question 1 using Addis AI Text-to-Speech
+        await serviceRef.current?.speakTTS(q1Text, language);
       },
       onError: (cat, msg) => {
         setErrorCategory(cat);
@@ -226,6 +356,7 @@ export function useAddisRealtime({
       setErrorMessage(null);
       setTranscriptLogs([]);
       fullConversationRef.current = [];
+      updateEligibilityStep('IDLE');
 
       if (!serviceRef.current) return false;
       return await serviceRef.current.startSession(apiKey);
@@ -234,6 +365,7 @@ export function useAddisRealtime({
   );
 
   const stopSession = useCallback(() => {
+    updateEligibilityStep('IDLE');
     if (serviceRef.current) {
       serviceRef.current.stop();
     }
@@ -246,13 +378,12 @@ export function useAddisRealtime({
   }, []);
 
   const sendClientPrompt = useCallback((text: string) => {
-    if (serviceRef.current) {
-      serviceRef.current.sendClientPrompt(text);
-    }
-  }, []);
+    handleUserSpeechText(text, language);
+  }, [handleUserSpeechText, language]);
 
   return {
     state,
+    eligibilityStep,
     diagnostics,
     logs,
     transcriptLogs,

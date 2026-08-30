@@ -610,45 +610,60 @@ export class AddisRealtimeService {
     }
   }
 
+  // Synthesize & speak any text using Addis AI Text-to-Speech
+  public async speakTTS(text: string, language: string = 'am'): Promise<void> {
+    return new Promise<void>((resolve) => {
+      (async () => {
+        try {
+          this.setState('VESPER_SPEAKING');
+          this.log(this.state, `Speaking TTS: "${text}"`, 'info');
+
+          const res = await fetch('/api/addis/tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text, language }),
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            if (data.audioBase64) {
+              const audio = new Audio(data.audioBase64);
+              this.diagnostics.playbackState = 'PLAYING';
+              this.emitDiagnostics();
+
+              const handleEnd = () => {
+                this.diagnostics.playbackState = 'IDLE';
+                if (this.state === 'VESPER_SPEAKING') {
+                  this.setState('LISTENING');
+                }
+                this.emitDiagnostics();
+                resolve();
+              };
+
+              audio.onended = handleEnd;
+              audio.onerror = handleEnd;
+
+              await audio.play();
+              return;
+            }
+          }
+        } catch (err: any) {
+          this.log(this.state, `TTS audio playback warning: ${err.message}`, 'warning');
+        }
+
+        if (this.state === 'VESPER_SPEAKING') {
+          this.setState('LISTENING');
+        }
+        resolve();
+      })();
+    });
+  }
+
   // Synthesize & speak opening greeting audio out loud
   public async speakGreeting(text: string, language: string = 'am') {
-    try {
-      this.setState('VESPER_SPEAKING');
-      this.log(this.state, `Speaking Vesper greeting: "${text}"`, 'info');
-
-      const res = await fetch('/api/addis/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, language }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data.audioBase64) {
-          const audio = new Audio(data.audioBase64);
-          this.diagnostics.playbackState = 'PLAYING';
-          this.emitDiagnostics();
-
-          audio.onended = () => {
-            this.diagnostics.playbackState = 'IDLE';
-            if (this.state === 'VESPER_SPEAKING') {
-              this.setState('LISTENING');
-            }
-            this.emitDiagnostics();
-          };
-
-          await audio.play();
-          return;
-        }
-      }
-    } catch (err: any) {
-      this.log(this.state, `Greeting audio playback warning: ${err.message}`, 'warning');
-    }
-
-    if (this.state === 'VESPER_SPEAKING') {
-      this.setState('LISTENING');
-    }
+    return this.speakTTS(text, language);
   }
+
 
   // =========================================================================
   // STOP & CLEANUP SESSION
