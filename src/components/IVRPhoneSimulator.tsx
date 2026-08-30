@@ -291,7 +291,7 @@ export const IVRPhoneSimulator: React.FC<IVRPhoneSimulatorProps> = ({
             {/* Main Interactive Button */}
             <button
               onClick={handleSpeakNowClick}
-              className={`relative w-48 h-48 sm:w-64 sm:h-64 rounded-full border-4 flex flex-col items-center justify-center gap-3 transition-all duration-300 transform active:scale-95 shadow-2xl cursor-pointer ${
+              className={`relative w-48 h-48 sm:w-64 sm:h-64 rounded-full border-4 flex flex-col items-center justify-center gap-3 transition-all duration-300 transform active:scale-95 shadow-2xl cursor-pointer overflow-hidden ${
                 addisState === 'VESPER_SPEAKING'
                   ? 'border-purple-400 bg-gradient-to-b from-purple-950/80 via-neutral-900 to-black shadow-purple-900/60 ring-8 ring-purple-500/20'
                   : addisState === 'LISTENING'
@@ -299,8 +299,30 @@ export const IVRPhoneSimulator: React.FC<IVRPhoneSimulatorProps> = ({
                   : 'border-white/30 hover:border-white/60 bg-gradient-to-b from-neutral-800/90 via-neutral-900 to-black shadow-black/80'
               }`}
             >
+              {/* Active Voice Wave Overlay UI */}
+              {isSessionActive && (
+                <div className="absolute inset-0 pointer-events-none flex items-center justify-center opacity-30">
+                  <div className="flex items-center justify-center gap-1 h-20 w-full px-4">
+                    {[14, 28, 42, 56, 70, 84, 70, 56, 42, 28, 14].map((barHeight, idx) => (
+                      <span
+                        key={idx}
+                        style={{
+                          height: `${Math.max(8, (diagnostics.micLevel / 100) * barHeight + 12)}px`,
+                          animationDuration: `${0.3 + (idx % 4) * 0.15}s`,
+                        }}
+                        className={`w-1.5 rounded-full transition-all duration-75 animate-pulse ${
+                          addisState === 'VESPER_SPEAKING'
+                            ? 'bg-purple-400 shadow-sm shadow-purple-300'
+                            : 'bg-emerald-400 shadow-sm shadow-emerald-300'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div
-                className={`p-4 rounded-full transition-colors ${
+                className={`relative z-10 p-4 rounded-full transition-colors ${
                   addisState === 'VESPER_SPEAKING'
                     ? 'bg-purple-500/20 text-purple-300'
                     : addisState === 'LISTENING'
@@ -311,7 +333,7 @@ export const IVRPhoneSimulator: React.FC<IVRPhoneSimulatorProps> = ({
                 <Mic className="w-10 h-10 sm:w-14 sm:h-14" />
               </div>
 
-              <span className="text-sm sm:text-base font-bold tracking-widest uppercase text-white">
+              <span className="relative z-10 text-sm sm:text-base font-bold tracking-widest uppercase text-white">
                 {isSessionActive ? 'STOP CALL' : 'SPEAK NOW'}
               </span>
             </button>
