@@ -86,8 +86,7 @@ app.post("/api/addis/tts", async (req, res) => {
 // Endpoint for Addis Speech-to-Text (STT) API v2
 app.post("/api/addis/stt", async (req, res) => {
   try {
-    const apiKey = getAddisApiKey();
-    const { audioBase64, mimeType = "audio/webm", languageCode = "am" } = req.body;
+    const { audioBase64, language = "am" } = req.body;
 
     if (!audioBase64) {
       res.status(400).json({ error: "audioBase64 is required" });
@@ -96,29 +95,8 @@ app.post("/api/addis/stt", async (req, res) => {
 
     const cleanBase64 = audioBase64.replace(/^data:[^;]+;base64,/, "");
     const audioBuffer = Buffer.from(cleanBase64, "base64");
-    const audioBlob = new Blob([audioBuffer], { type: mimeType });
-
-    const formData = new FormData();
-    formData.append("audio", audioBlob, "recording.webm");
-    formData.append("request_data", JSON.stringify({ language_code: languageCode }));
-
-    const sttResponse = await fetch("https://api.addisassistant.com/api/v2/stt", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: formData,
-    });
-
-    if (!sttResponse.ok) {
-      const errText = await sttResponse.text();
-      console.error("Addis STT API error:", sttResponse.status, errText);
-      res.status(sttResponse.status).json({ error: `Addis STT Error: ${errText}` });
-      return;
-    }
-
-    const sttData = await sttResponse.json();
-    res.json(sttData);
+    const transcription = await getAddisAI().speech.transcribe({ audio: audioBuffer, language });
+    res.json(transcription);
   } catch (err: any) {
     console.error("Addis STT route error:", err);
     res.status(500).json({ error: err.message || "Failed to process STT" });
