@@ -1,3 +1,7 @@
+// Addis AI Realtime Browser Protocol Service
+// Input:  16kHz PCM16 mono -> Base64 JSON over WebSocket
+// Output: 24kHz PCM16 mono -> AudioBuffer playback
+
 export type AddisRealtimeState =
   | 'IDLE'
   | 'CONNECTING'
@@ -55,49 +59,85 @@ export interface AddisRealtimeCallbacks {
   onStateChange?: (state: AddisRealtimeState) => void;
   onDiagnosticsUpdate?: (diag: DiagnosticsState) => void;
   onLog?: (entry: AddisLogEntry) => void;
+
+  // AI response text
   onVesperSpeechText?: (text: string) => void;
+
+  // USER transcription
+  onUserTranscript?: (text: string) => void;
+
   onUserSpeechSegment?: (audioBlob: Blob) => void;
   onTurnComplete?: () => void;
   onSetupComplete?: () => void;
-  onError?: (category: AddisErrorCategory, message: string) => void;
+  onError?: (
+    category: AddisErrorCategory,
+    message: string
+  ) => void;
 }
 
 const INPUT_SAMPLE_RATE = 16000;
 const OUTPUT_SAMPLE_RATE = 24000;
 
-function float32ToInt16PCM(input: Float32Array): Int16Array {
+// ============================================================
+// AUDIO HELPERS
+// ============================================================
+
+function float32ToInt16PCM(
+  input: Float32Array
+): Int16Array {
   const output = new Int16Array(input.length);
 
   for (let i = 0; i < input.length; i++) {
-    const sample = Math.max(-1, Math.min(1, input[i]));
-    output[i] = sample < 0
-      ? sample * 0x8000
-      : sample * 0x7fff;
+    const sample = Math.max(
+      -1,
+      Math.min(1, input[i])
+    );
+
+    output[i] =
+      sample < 0
+        ? sample * 0x8000
+        : sample * 0x7fff;
   }
 
   return output;
 }
 
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
+function arrayBufferToBase64(
+  buffer: ArrayBuffer
+): string {
   const bytes = new Uint8Array(buffer);
+
   let binary = '';
 
   const chunkSize = 0x8000;
 
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+  for (
+    let i = 0;
+    i < bytes.length;
+    i += chunkSize
+  ) {
+    const chunk = bytes.subarray(
+      i,
+      Math.min(i + chunkSize, bytes.length)
+    );
+
     binary += String.fromCharCode(...chunk);
   }
 
   return btoa(binary);
 }
 
-function base64ToArrayBuffer(base64: string): ArrayBuffer {
+function base64ToArrayBuffer(
+  base64: string
+): ArrayBuffer {
   const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
+
+  const bytes =
+    new Uint8Array(binary.length);
 
   for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
+    bytes[i] =
+      binary.charCodeAt(i);
   }
 
   return bytes.buffer;
@@ -106,6 +146,10 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
 function timestampNow(): string {
   return new Date().toISOString();
 }
+
+// ============================================================
+// SERVICE
+// ============================================================
 
 export class AddisRealtimeService {
   private socket: WebSocket | null = null;
@@ -126,9 +170,12 @@ export class AddisRealtimeService {
   private canStreamAudio = false;
 
   private nextPlayTime = 0;
-  private activeSources: AudioBufferSourceNode[] = [];
 
-  private setupTimer: ReturnType<typeof setTimeout> | null = null;
+  private activeSources:
+    AudioBufferSourceNode[] = [];
+
+  private setupTimer:
+    ReturnType<typeof setTimeout> | null = null;
 
   private diagnostics: DiagnosticsState = {
     hasMicPermission: false,
@@ -153,11 +200,15 @@ export class AddisRealtimeService {
     errorCategory: null,
   };
 
-  constructor(callbacks: AddisRealtimeCallbacks = {}) {
+  constructor(
+    callbacks: AddisRealtimeCallbacks = {}
+  ) {
     this.callbacks = callbacks;
   }
 
-  public setCallbacks(callbacks: AddisRealtimeCallbacks) {
+  public setCallbacks(
+    callbacks: AddisRealtimeCallbacks
+  ) {
     this.callbacks = {
       ...this.callbacks,
       ...callbacks,
@@ -169,10 +220,18 @@ export class AddisRealtimeService {
   }
 
   public getDiagnostics() {
-    return { ...this.diagnostics };
+    return {
+      ...this.diagnostics,
+    };
   }
 
-  private setState(state: AddisRealtimeState) {
+  // ============================================================
+  // STATE
+  // ============================================================
+
+  private setState(
+    state: AddisRealtimeState
+  ) {
     this.state = state;
 
     this.log(
@@ -181,7 +240,10 @@ export class AddisRealtimeService {
       'info'
     );
 
-    this.callbacks.onStateChange?.(state);
+    this.callbacks.onStateChange?.(
+      state
+    );
+
     this.emitDiagnostics();
   }
 
@@ -190,6 +252,10 @@ export class AddisRealtimeService {
       ...this.diagnostics,
     });
   }
+
+  // ============================================================
+  // LOGGING
+  // ============================================================
 
   private log(
     state: AddisRealtimeState,
@@ -209,16 +275,23 @@ export class AddisRealtimeService {
     );
 
     this.callbacks.onLog?.({
-      id: `${Date.now()}-${Math.random()}`,
-      timestamp: timestampNow(),
+      id:
+        `${Date.now()}-${Math.random()}`,
+
+      timestamp:
+        timestampNow(),
+
       state,
+
       message,
+
       type,
+
       payload,
     });
   }
 
-  private error(
+  private reportError(
     category: AddisErrorCategory,
     message: string,
     payload?: any
@@ -228,8 +301,11 @@ export class AddisRealtimeService {
       payload
     );
 
-    this.diagnostics.lastServerError = message;
-    this.diagnostics.errorCategory = category;
+    this.diagnostics.lastServerError =
+      message;
+
+    this.diagnostics.errorCategory =
+      category;
 
     this.setState('ERROR');
 
@@ -240,7 +316,7 @@ export class AddisRealtimeService {
   }
 
   // ============================================================
-  // START
+  // START REALTIME SESSION
   // ============================================================
 
   public async startSession(
@@ -253,16 +329,23 @@ export class AddisRealtimeService {
       this.state !== 'ENDED' &&
       this.state !== 'ERROR'
     ) {
+      this.log(
+        this.state,
+        'Session already active',
+        'warning'
+      );
+
       return false;
     }
 
     try {
+
       this.reset();
 
       this.setState('CONNECTING');
 
       // --------------------------------------------------------
-      // 1. MICROPHONE
+      // MICROPHONE
       // --------------------------------------------------------
 
       this.log(
@@ -270,80 +353,116 @@ export class AddisRealtimeService {
         'Requesting microphone permission...'
       );
 
-      this.mediaStream =
-        await navigator.mediaDevices.getUserMedia({
-          audio: {
-            channelCount: 1,
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          },
-          video: false,
-        });
+      try {
 
-      this.diagnostics.hasMicPermission = true;
+        this.mediaStream =
+          await navigator.mediaDevices
+            .getUserMedia({
+              audio: {
+                channelCount: 1,
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+              },
+              video: false,
+            });
+
+        this.diagnostics.hasMicPermission =
+          true;
+
+      } catch (error: any) {
+
+        this.reportError(
+          'MIC_PERMISSION_ERROR',
+          `Microphone access denied: ${
+            error?.message || error
+          }`
+        );
+
+        return false;
+      }
 
       // --------------------------------------------------------
-      // 2. OUTPUT AUDIO
+      // AUDIO CONTEXT
       // --------------------------------------------------------
 
       const AudioContextClass =
         window.AudioContext ||
         (window as any).webkitAudioContext;
 
+      // OUTPUT
+
       this.outputContext =
         new AudioContextClass({
-          sampleRate: OUTPUT_SAMPLE_RATE,
+          sampleRate:
+            OUTPUT_SAMPLE_RATE,
         });
 
-      await this.outputContext.resume();
+      if (
+        this.outputContext.state ===
+        'suspended'
+      ) {
+        await this.outputContext.resume();
+      }
 
-      this.diagnostics.outputAudioContextState =
+      this.diagnostics
+        .outputAudioContextState =
         this.outputContext.state;
 
-      this.diagnostics.outputSampleRate =
+      this.diagnostics
+        .outputSampleRate =
         this.outputContext.sampleRate;
 
       this.nextPlayTime =
         this.outputContext.currentTime;
 
-      // --------------------------------------------------------
-      // 3. INPUT AUDIO
-      // --------------------------------------------------------
+      // INPUT
 
       this.inputContext =
         new AudioContextClass({
-          sampleRate: INPUT_SAMPLE_RATE,
+          sampleRate:
+            INPUT_SAMPLE_RATE,
         });
 
-      await this.inputContext.resume();
+      if (
+        this.inputContext.state ===
+        'suspended'
+      ) {
+        await this.inputContext.resume();
+      }
 
-      this.diagnostics.inputAudioContextState =
+      this.diagnostics
+        .inputAudioContextState =
         this.inputContext.state;
 
-      this.diagnostics.inputSampleRate =
+      this.diagnostics
+        .inputSampleRate =
         this.inputContext.sampleRate;
 
       // --------------------------------------------------------
-      // 4. MICROPHONE PROCESSOR
+      // MICROPHONE PROCESSING
       // --------------------------------------------------------
 
       this.sourceNode =
-        this.inputContext.createMediaStreamSource(
-          this.mediaStream
-        );
+        this.inputContext
+          .createMediaStreamSource(
+            this.mediaStream
+          );
 
       this.processorNode =
-        this.inputContext.createScriptProcessor(
-          2048,
-          1,
-          1
-        );
+        this.inputContext
+          .createScriptProcessor(
+            2048,
+            1,
+            1
+          );
 
       this.muteGainNode =
-        this.inputContext.createGain();
+        this.inputContext
+          .createGain();
 
-      this.muteGainNode.gain.value = 0;
+      this.muteGainNode.gain.value =
+        0;
 
       this.sourceNode.connect(
         this.processorNode
@@ -360,67 +479,99 @@ export class AddisRealtimeService {
       this.processorNode.onaudioprocess =
         (event) => {
 
-          const audio =
-            event.inputBuffer.getChannelData(0);
+          if (
+            !this.socket ||
+            this.socket.readyState !==
+              WebSocket.OPEN
+          ) {
+            return;
+          }
 
-          // microphone level
+          if (!this.canStreamAudio) {
+            return;
+          }
+
+          const audio =
+            event.inputBuffer
+              .getChannelData(0);
+
+          // MIC LEVEL
+
           let sum = 0;
 
-          for (let i = 0; i < audio.length; i++) {
-            sum += audio[i] * audio[i];
+          for (
+            let i = 0;
+            i < audio.length;
+            i++
+          ) {
+            sum +=
+              audio[i] *
+              audio[i];
           }
 
           const rms =
-            Math.sqrt(sum / audio.length);
+            Math.sqrt(
+              sum / audio.length
+            );
 
           this.diagnostics.micLevel =
-            Math.min(100, Math.round(rms * 500));
+            Math.min(
+              100,
+              Math.round(rms * 500)
+            );
 
-          // IMPORTANT:
-          // Do not send anything until Addis says setupComplete.
-          if (
-            !this.canStreamAudio ||
-            !this.socket ||
-            this.socket.readyState !== WebSocket.OPEN
-          ) {
-            this.emitDiagnostics();
-            return;
-          }
+          // ----------------------------------------------------
+          // PCM16
+          // ----------------------------------------------------
 
           try {
 
             const pcm16 =
-              float32ToInt16PCM(audio);
+              float32ToInt16PCM(
+                audio
+              );
 
             const base64 =
               arrayBufferToBase64(
                 pcm16.buffer
               );
 
-            const message = JSON.stringify({
+            const payload = {
               data: base64,
-              mimeType: 'audio/pcm;rate=16000',
-            });
+              mimeType:
+                'audio/pcm;rate=16000',
+            };
 
-            this.socket.send(message);
+            this.socket.send(
+              JSON.stringify(payload)
+            );
 
-            this.diagnostics.isAudioStreaming = true;
+            this.diagnostics
+              .isAudioStreaming =
+              true;
 
-            this.diagnostics.lastAudioChunkSentTime =
+            this.diagnostics
+              .lastAudioChunkSentTime =
               timestampNow();
 
-            this.diagnostics.lastAudioChunkSentBytes =
+            this.diagnostics
+              .lastAudioChunkSentBytes =
               base64.length;
 
-            if (this.state === 'READY') {
-              this.setState('LISTENING');
+            if (
+              this.state === 'READY'
+            ) {
+              this.setState(
+                'LISTENING'
+              );
             }
 
-          } catch (err: any) {
+          } catch (error: any) {
 
-            this.error(
+            this.reportError(
               'AUDIO_ENCODING_ERROR',
-              err.message || 'Failed to encode microphone audio'
+              error?.message ||
+                'Audio encoding failed'
             );
           }
 
@@ -428,24 +579,30 @@ export class AddisRealtimeService {
         };
 
       // --------------------------------------------------------
-      // 5. GET WEBSOCKET URL
+      // WEBSOCKET URL
       // --------------------------------------------------------
 
-      let wsUrl = customWsUrl;
+      let wsUrl =
+        customWsUrl;
 
       if (!wsUrl) {
 
         if (apiKey) {
 
           wsUrl =
-            `wss://relay.addisassistant.com/ws?apiKey=${encodeURIComponent(apiKey)}`;
+            `wss://relay.addisassistant.com/ws?apiKey=${encodeURIComponent(
+              apiKey
+            )}`;
 
         } else {
 
           const response =
-            await fetch('/api/addis/session');
+            await fetch(
+              '/api/addis/session'
+            );
 
           if (!response.ok) {
+
             throw new Error(
               `Session endpoint returned ${response.status}`
             );
@@ -455,48 +612,57 @@ export class AddisRealtimeService {
             await response.json();
 
           if (!data.wsUrl) {
+
             throw new Error(
-              'Session endpoint did not return wsUrl'
+              'No WebSocket URL returned'
             );
           }
 
-          wsUrl = data.wsUrl;
+          wsUrl =
+            data.wsUrl;
         }
       }
 
       // --------------------------------------------------------
-      // 6. CONNECT
+      // CONNECT
       // --------------------------------------------------------
 
       this.log(
         'CONNECTING',
-        'Connecting to Addis Realtime...'
+        'Connecting to Addis Realtime WebSocket...'
       );
 
       this.socket =
         new WebSocket(wsUrl);
 
-      this.diagnostics.webSocketState =
+      this.diagnostics
+        .webSocketState =
         'CONNECTING';
 
-      this.socket.onopen = () => {
+      // --------------------------------------------------------
+      // OPEN
+      // --------------------------------------------------------
 
-        this.diagnostics.webSocketState =
-          'OPEN';
+      this.socket.onopen =
+        () => {
 
-        this.log(
-          'WAITING_FOR_SETUP',
-          'Connected. Waiting for Addis setupComplete...',
-          'success'
-        );
+          this.diagnostics
+            .webSocketState =
+            'OPEN';
 
-        this.setState(
-          'WAITING_FOR_SETUP'
-        );
-      };
+          this.log(
+            'WAITING_FOR_SETUP',
+            'WebSocket connected. Waiting for setupComplete...',
+            'success'
+          );
+
+          this.setState(
+            'WAITING_FOR_SETUP'
+          );
+        };
 
       // --------------------------------------------------------
-      // 7. SERVER EVENTS
+      // MESSAGE
       // --------------------------------------------------------
 
       this.socket.onmessage =
@@ -505,9 +671,12 @@ export class AddisRealtimeService {
           try {
 
             const message =
-              JSON.parse(event.data);
+              JSON.parse(
+                event.data
+              );
 
-            this.diagnostics.lastServerEvent =
+            this.diagnostics
+              .lastServerEvent =
               timestampNow();
 
             this.log(
@@ -517,49 +686,93 @@ export class AddisRealtimeService {
               message
             );
 
-            // ------------------------------
-            // SETUP
-            // ------------------------------
+            // ==================================================
+            // SETUP COMPLETE
+            // ==================================================
 
             if (
               message.setupComplete === true ||
+              message.type ===
+                'setupComplete' ||
               (
                 message.type === 'status' &&
-                typeof message.message === 'string' &&
-                /ready/i.test(message.message)
+                typeof message.message ===
+                  'string' &&
+                /ready/i.test(
+                  message.message
+                )
               )
             ) {
 
-              this.setupComplete = true;
-              this.canStreamAudio = true;
-
-              this.diagnostics.setupComplete =
+              this.setupComplete =
                 true;
 
-              this.diagnostics.isAudioStreaming =
+              this.canStreamAudio =
                 true;
 
-              if (this.setupTimer) {
-                clearTimeout(this.setupTimer);
-                this.setupTimer = null;
+              this.diagnostics
+                .setupComplete =
+                true;
+
+              this.diagnostics
+                .isAudioStreaming =
+                true;
+
+              if (
+                this.setupTimer
+              ) {
+                clearTimeout(
+                  this.setupTimer
+                );
+
+                this.setupTimer =
+                  null;
               }
 
               this.log(
                 'READY',
-                'Addis Realtime is ready. Microphone streaming started.',
+                'Addis is ready. Microphone streaming enabled.',
                 'success'
               );
 
-              this.setState('READY');
+              this.setState(
+                'READY'
+              );
 
-              this.callbacks.onSetupComplete?.();
+              this.callbacks
+                .onSetupComplete?.();
 
               return;
             }
 
-            // ------------------------------
-            // AI AUDIO
-            // ------------------------------
+            // ==================================================
+            // USER TRANSCRIPTION
+            // ==================================================
+
+            const userTranscript =
+              this.extractUserTranscript(
+                message
+              );
+
+            if (
+              userTranscript
+            ) {
+
+              this.log(
+                this.state,
+                `USER TRANSCRIPT: "${userTranscript}"`,
+                'success'
+              );
+
+              this.callbacks
+                .onUserTranscript?.(
+                  userTranscript
+                );
+            }
+
+            // ==================================================
+            // AI RESPONSE
+            // ==================================================
 
             const parts =
               message
@@ -567,9 +780,17 @@ export class AddisRealtimeService {
                 ?.modelTurn
                 ?.parts;
 
-            if (Array.isArray(parts)) {
+            if (
+              Array.isArray(parts)
+            ) {
 
-              for (const part of parts) {
+              for (
+                const part of parts
+              ) {
+
+                // --------------------------
+                // AI AUDIO
+                // --------------------------
 
                 if (
                   part?.inlineData?.data
@@ -578,25 +799,40 @@ export class AddisRealtimeService {
                   const audio =
                     part.inlineData.data;
 
-                  this.diagnostics.lastAiAudioReceivedTime =
+                  this.diagnostics
+                    .lastAiAudioReceivedTime =
                     timestampNow();
 
-                  this.diagnostics.lastAiAudioReceivedBytes =
+                  this.diagnostics
+                    .lastAiAudioReceivedBytes =
                     audio.length;
 
                   this.log(
                     'VESPER_SPEAKING',
-                    `AI audio received (${audio.length} bytes)`,
+                    `AI audio received (${audio.length})`,
                     'audio'
                   );
 
-                  await this.playAudio(audio);
+                  await this.playAudio(
+                    audio
+                  );
                 }
 
+                // --------------------------
+                // AI TEXT
+                // --------------------------
+
                 if (
-                  typeof part?.text === 'string' &&
+                  typeof part?.text ===
+                    'string' &&
                   part.text.trim()
                 ) {
+
+                  this.log(
+                    this.state,
+                    `Vesper: ${part.text.trim()}`,
+                    'server'
+                  );
 
                   this.callbacks
                     .onVesperSpeechText?.(
@@ -606,103 +842,141 @@ export class AddisRealtimeService {
               }
             }
 
-            // ------------------------------
-            // TURN COMPLETE
-            // ------------------------------
+            // ==================================================
+            // DIRECT AUDIO COMPATIBILITY
+            // ==================================================
 
             if (
-              message?.serverContent?.turnComplete === true
+              typeof message?.audio ===
+                'string'
             ) {
 
-              this.diagnostics.turnComplete =
+              this.diagnostics
+                .lastAiAudioReceivedTime =
+                timestampNow();
+
+              this.diagnostics
+                .lastAiAudioReceivedBytes =
+                message.audio.length;
+
+              await this.playAudio(
+                message.audio
+              );
+            }
+
+            // ==================================================
+            // TURN COMPLETE
+            // ==================================================
+
+            if (
+              message
+                ?.serverContent
+                ?.turnComplete === true ||
+              message.turnComplete ===
+                true
+            ) {
+
+              this.diagnostics
+                .turnComplete =
                 true;
 
               this.callbacks
                 .onTurnComplete?.();
             }
 
-            // ------------------------------
+            // ==================================================
             // INTERRUPTION
-            // ------------------------------
+            // ==================================================
 
             if (
-              message?.serverContent?.interrupted === true
+              message
+                ?.serverContent
+                ?.interrupted ===
+                true ||
+              message.interrupted ===
+                true
             ) {
 
               this.interruptPlayback();
             }
 
-            // ------------------------------
+            // ==================================================
             // ERROR
-            // ------------------------------
+            // ==================================================
 
-            if (message?.error) {
+            if (
+              message.error
+            ) {
 
-              const errorMessage =
-                typeof message.error === 'string'
+              const errorText =
+                typeof message.error ===
+                  'string'
                   ? message.error
                   : message.error.message ||
-                    JSON.stringify(message.error);
+                    JSON.stringify(
+                      message.error
+                    );
 
-              this.error(
+              this.reportError(
                 'ADDIS_SERVER_ERROR',
-                errorMessage,
+                errorText,
                 message.error
               );
             }
 
             this.emitDiagnostics();
 
-          } catch (err: any) {
+          } catch (error: any) {
 
             this.log(
               this.state,
-              `Invalid server message: ${err.message}`,
+              `Failed to parse server message: ${
+                error?.message || error
+              }`,
               'warning'
             );
           }
         };
 
       // --------------------------------------------------------
-      // 8. WEBSOCKET ERROR
+      // ERROR
       // --------------------------------------------------------
 
-      this.socket.onerror = () => {
+      this.socket.onerror =
+        () => {
 
-        this.diagnostics.webSocketState =
-          'ERROR';
+          this.diagnostics
+            .webSocketState =
+            'ERROR';
 
-        this.error(
-          'WEBSOCKET_ERROR',
-          'Addis WebSocket error'
-        );
-      };
+          this.reportError(
+            'WEBSOCKET_ERROR',
+            'Addis WebSocket transport error'
+          );
+        };
 
       // --------------------------------------------------------
-      // 9. CLOSED
+      // CLOSE
       // --------------------------------------------------------
 
       this.socket.onclose =
         (event) => {
 
-          this.diagnostics.webSocketState =
+          this.diagnostics
+            .webSocketState =
             'CLOSED';
 
-          this.diagnostics.webSocketCloseCode =
+          this.diagnostics
+            .webSocketCloseCode =
             event.code;
 
-          this.diagnostics.webSocketCloseReason =
-            event.reason || 'No close reason';
+          this.diagnostics
+            .webSocketCloseReason =
+            event.reason ||
+            'No close reason';
 
-          this.canStreamAudio = false;
-
-          this.log(
-            'ENDED',
-            `WebSocket closed: ${event.code} ${event.reason || ''}`,
-            event.code === 1000
-              ? 'info'
-              : 'warning'
-          );
+          this.canStreamAudio =
+            false;
 
           if (
             event.code !== 1000 &&
@@ -710,24 +984,29 @@ export class AddisRealtimeService {
             this.state !== 'ENDED'
           ) {
 
-            this.error(
+            this.reportError(
               'WEBSOCKET_CLOSED',
-              `WebSocket closed with code ${event.code}: ${event.reason || 'unknown'}`
+              `WebSocket closed with code ${event.code}: ${
+                event.reason ||
+                'unknown reason'
+              }`
             );
 
           }
         };
 
       // --------------------------------------------------------
-      // 10. SETUP TIMEOUT
+      // SETUP TIMEOUT
       // --------------------------------------------------------
 
       this.setupTimer =
         setTimeout(() => {
 
-          if (!this.setupComplete) {
+          if (
+            !this.setupComplete
+          ) {
 
-            this.error(
+            this.reportError(
               'SETUP_TIMEOUT',
               'Addis did not send setupComplete within 15 seconds'
             );
@@ -737,15 +1016,71 @@ export class AddisRealtimeService {
 
       return true;
 
-    } catch (err: any) {
+    } catch (error: any) {
 
-      this.error(
+      this.reportError(
         'WEBSOCKET_ERROR',
-        err.message || 'Failed to start realtime session'
+        error?.message ||
+          'Failed to start Addis session'
       );
 
       return false;
     }
+  }
+
+  // ============================================================
+  // EXTRACT USER TRANSCRIPTION
+  // ============================================================
+
+  private extractUserTranscript(
+    message: any
+  ): string | null {
+
+    const candidates = [
+
+      // Most likely realtime format
+      message
+        ?.serverContent
+        ?.inputTranscription
+        ?.text,
+
+      // Alternative
+      message
+        ?.serverContent
+        ?.inputTranscription,
+
+      // Other possible formats
+      message?.inputTranscription?.text,
+
+      message?.inputTranscription,
+
+      message?.inputTranscript,
+
+      message?.userTranscript,
+
+      message?.transcript,
+
+      message?.text?.input,
+
+      message?.user?.transcript,
+
+    ];
+
+    for (
+      const candidate of candidates
+    ) {
+
+      if (
+        typeof candidate ===
+          'string' &&
+        candidate.trim()
+      ) {
+
+        return candidate.trim();
+      }
+    }
+
+    return null;
   }
 
   // ============================================================
@@ -763,7 +1098,8 @@ export class AddisRealtimeService {
       }
 
       if (
-        this.outputContext.state === 'suspended'
+        this.outputContext.state ===
+        'suspended'
       ) {
         await this.outputContext.resume();
       }
@@ -790,6 +1126,7 @@ export class AddisRealtimeService {
         i < pcm16.length;
         i++
       ) {
+
         float32[i] =
           pcm16[i] / 32768;
       }
@@ -807,9 +1144,11 @@ export class AddisRealtimeService {
       );
 
       const source =
-        this.outputContext.createBufferSource();
+        this.outputContext
+          .createBufferSource();
 
-      source.buffer = audioBuffer;
+      source.buffer =
+        audioBuffer;
 
       source.connect(
         this.outputContext.destination
@@ -821,60 +1160,72 @@ export class AddisRealtimeService {
           this.nextPlayTime
         );
 
-      source.start(startTime);
+      source.start(
+        startTime
+      );
 
       this.nextPlayTime =
-        startTime + audioBuffer.duration;
+        startTime +
+        audioBuffer.duration;
 
       this.activeSources.push(
         source
       );
 
-      this.diagnostics.playbackState =
+      this.diagnostics
+        .playbackState =
         'PLAYING';
 
       this.setState(
         'VESPER_SPEAKING'
       );
 
-      source.onended = () => {
+      source.onended =
+        () => {
 
-        this.activeSources =
-          this.activeSources.filter(
-            (item) => item !== source
-          );
+          this.activeSources =
+            this.activeSources.filter(
+              item =>
+                item !== source
+            );
 
-        if (
-          this.activeSources.length === 0
-        ) {
+          if (
+            this.activeSources.length ===
+            0
+          ) {
 
-          this.diagnostics.playbackState =
-            'IDLE';
+            this.diagnostics
+              .playbackState =
+              'IDLE';
 
-          this.setState(
-            'LISTENING'
-          );
-        }
+            this.setState(
+              'LISTENING'
+            );
+          }
 
-        this.emitDiagnostics();
-      };
+          this.emitDiagnostics();
+        };
 
-    } catch (err: any) {
+    } catch (error: any) {
 
-      this.error(
+      this.reportError(
         'AUDIO_PLAYBACK_ERROR',
-        err.message || 'Failed to play AI audio'
+        error?.message ||
+          'Failed to play AI audio'
       );
     }
   }
 
   // ============================================================
-  // INTERRUPT AI
+  // INTERRUPT
   // ============================================================
 
   public interruptPlayback() {
 
-    for (const source of this.activeSources) {
+    for (
+      const source of
+      this.activeSources
+    ) {
 
       try {
         source.stop();
@@ -884,19 +1235,65 @@ export class AddisRealtimeService {
 
     this.activeSources = [];
 
-    if (this.outputContext) {
+    if (
+      this.outputContext
+    ) {
+
       this.nextPlayTime =
         this.outputContext.currentTime;
     }
 
-    this.diagnostics.playbackState =
+    this.diagnostics
+      .playbackState =
       'IDLE';
 
-    if (this.state === 'VESPER_SPEAKING') {
-      this.setState('LISTENING');
+    if (
+      this.state ===
+      'VESPER_SPEAKING'
+    ) {
+
+      this.setState(
+        'LISTENING'
+      );
     }
 
     this.emitDiagnostics();
+  }
+
+  // ============================================================
+  // SEND TEXT
+  // ============================================================
+
+  public sendClientPrompt(
+    text: string
+  ) {
+
+    if (
+      !this.socket ||
+      this.socket.readyState !==
+        WebSocket.OPEN ||
+      !this.setupComplete
+    ) {
+      return;
+    }
+
+    this.socket.send(
+      JSON.stringify({
+        clientContent: {
+          turns: [
+            {
+              role: 'user',
+              parts: [
+                {
+                  text,
+                },
+              ],
+            },
+          ],
+          turnComplete: true,
+        },
+      })
+    );
   }
 
   // ============================================================
@@ -905,14 +1302,26 @@ export class AddisRealtimeService {
 
   public async stop() {
 
-    this.canStreamAudio = false;
-    this.setupComplete = false;
+    this.canStreamAudio =
+      false;
 
-    this.setState('ENDING');
+    this.setupComplete =
+      false;
 
-    if (this.setupTimer) {
-      clearTimeout(this.setupTimer);
-      this.setupTimer = null;
+    this.setState(
+      'ENDING'
+    );
+
+    if (
+      this.setupTimer
+    ) {
+
+      clearTimeout(
+        this.setupTimer
+      );
+
+      this.setupTimer =
+        null;
     }
 
     this.interruptPlayback();
@@ -929,26 +1338,41 @@ export class AddisRealtimeService {
       this.muteGainNode?.disconnect();
     } catch {}
 
-    this.processorNode = null;
-    this.sourceNode = null;
-    this.muteGainNode = null;
+    this.processorNode =
+      null;
 
-    if (this.mediaStream) {
+    this.sourceNode =
+      null;
+
+    this.muteGainNode =
+      null;
+
+    if (
+      this.mediaStream
+    ) {
 
       this.mediaStream
         .getTracks()
-        .forEach(track => track.stop());
+        .forEach(
+          track =>
+            track.stop()
+        );
 
-      this.mediaStream = null;
+      this.mediaStream =
+        null;
     }
 
-    if (this.socket) {
+    if (
+      this.socket
+    ) {
 
       try {
 
         if (
-          this.socket.readyState === WebSocket.OPEN ||
-          this.socket.readyState === WebSocket.CONNECTING
+          this.socket.readyState ===
+            WebSocket.OPEN ||
+          this.socket.readyState ===
+            WebSocket.CONNECTING
         ) {
 
           this.socket.close(
@@ -959,33 +1383,48 @@ export class AddisRealtimeService {
 
       } catch {}
 
-      this.socket = null;
+      this.socket =
+        null;
     }
 
-    if (this.inputContext) {
+    if (
+      this.inputContext
+    ) {
 
       try {
         await this.inputContext.close();
       } catch {}
 
-      this.inputContext = null;
+      this.inputContext =
+        null;
     }
 
-    if (this.outputContext) {
+    if (
+      this.outputContext
+    ) {
 
       try {
         await this.outputContext.close();
       } catch {}
 
-      this.outputContext = null;
+      this.outputContext =
+        null;
     }
 
-    this.setState('ENDED');
+    this.setState(
+      'ENDED'
+    );
 
     setTimeout(() => {
 
-      if (this.state === 'ENDED') {
-        this.setState('IDLE');
+      if (
+        this.state ===
+        'ENDED'
+      ) {
+
+        this.setState(
+          'IDLE'
+        );
       }
 
     }, 100);
@@ -997,32 +1436,54 @@ export class AddisRealtimeService {
 
   private reset() {
 
-    this.setupComplete = false;
-    this.canStreamAudio = false;
-    this.activeSources = [];
-    this.nextPlayTime = 0;
+    this.setupComplete =
+      false;
+
+    this.canStreamAudio =
+      false;
+
+    this.activeSources =
+      [];
+
+    this.nextPlayTime =
+      0;
 
     this.diagnostics = {
       hasMicPermission: false,
-      inputAudioContextState: 'closed',
+      inputAudioContextState:
+        'closed',
       inputSampleRate: 0,
-      outputAudioContextState: 'closed',
+      outputAudioContextState:
+        'closed',
       outputSampleRate: 0,
-      webSocketState: 'CLOSED',
+      webSocketState:
+        'CLOSED',
       setupComplete: false,
       isAudioStreaming: false,
-      lastAudioChunkSentTime: null,
-      lastAudioChunkSentBytes: 0,
-      lastServerEvent: null,
-      lastAiAudioReceivedTime: null,
-      lastAiAudioReceivedBytes: 0,
-      playbackState: 'IDLE',
-      turnComplete: false,
-      webSocketCloseCode: null,
-      webSocketCloseReason: null,
-      lastServerError: null,
-      micLevel: 0,
-      errorCategory: null,
+      lastAudioChunkSentTime:
+        null,
+      lastAudioChunkSentBytes:
+        0,
+      lastServerEvent:
+        null,
+      lastAiAudioReceivedTime:
+        null,
+      lastAiAudioReceivedBytes:
+        0,
+      playbackState:
+        'IDLE',
+      turnComplete:
+        false,
+      webSocketCloseCode:
+        null,
+      webSocketCloseReason:
+        null,
+      lastServerError:
+        null,
+      micLevel:
+        0,
+      errorCategory:
+        null,
     };
   }
 }
