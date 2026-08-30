@@ -11,8 +11,8 @@ error: 'ADDIS_API_KEY is not configured'
 }
 
 const wsUrl =
-"wss://relay.addisassistant.com/ws?apiKey=${encodeURIComponent(apiKey)}";
-
+  `wss://relay.addisassistant.com/ws?apiKey=${encodeURIComponent(apiKey)}`;
+  
 return res.status(200).json({
 success: true,
 wsUrl,
