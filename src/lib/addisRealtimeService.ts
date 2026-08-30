@@ -610,13 +610,18 @@ export class AddisRealtimeService {
     }
   }
 
-  // Synthesize & speak any text using Addis AI Text-to-Speech
+  // Synthesize & speak any text using Addis AI Text-to-Speech (with SpeechSynthesis fallback)
   public async speakTTS(text: string, language: string = 'am'): Promise<void> {
     return new Promise<void>((resolve) => {
       (async () => {
         try {
           this.setState('VESPER_SPEAKING');
           this.log(this.state, `Speaking TTS: "${text}"`, 'info');
+
+          // Ensure output AudioContext is active
+          if (this.outputContext && this.outputContext.state === 'suspended') {
+            await this.outputContext.resume().catch(() => {});
+          }
 
           const res = await fetch('/api/addis/tts', {
             method: 'POST',
@@ -627,7 +632,11 @@ export class AddisRealtimeService {
           if (res.ok) {
             const data = await res.json();
             if (data.audioBase64) {
-              const audio = new Audio(data.audioBase64);
+              const audioSrc = data.audioBase64.startsWith('data:')
+                ? data.audioBase64
+                : `data:audio/mp3;base64,${data.audioBase64}`;
+
+              const audio = new Audio(audioSrc);
               this.diagnostics.playbackState = 'PLAYING';
               this.emitDiagnostics();
 
@@ -641,21 +650,56 @@ export class AddisRealtimeService {
               };
 
               audio.onended = handleEnd;
-              audio.onerror = handleEnd;
+              audio.onerror = (e) => {
+                console.warn('HTMLAudioElement error, attempting SpeechSynthesis fallback:', e);
+                this.speakFallbackSpeechSynthesis(text, language).then(handleEnd);
+              };
 
-              await audio.play();
-              return;
+              try {
+                await audio.play();
+                return;
+              } catch (playErr) {
+                console.warn('Audio.play() blocked, attempting SpeechSynthesis fallback:', playErr);
+                await this.speakFallbackSpeechSynthesis(text, language);
+                handleEnd();
+                return;
+              }
             }
           }
         } catch (err: any) {
           this.log(this.state, `TTS audio playback warning: ${err.message}`, 'warning');
         }
 
+        // SpeechSynthesis Fallback if server TTS fails or audio context blocked
+        await this.speakFallbackSpeechSynthesis(text, language);
+
         if (this.state === 'VESPER_SPEAKING') {
           this.setState('LISTENING');
         }
         resolve();
       })();
+    });
+  }
+
+  private speakFallbackSpeechSynthesis(text: string, language: string): Promise<void> {
+    return new Promise<void>((resolve) => {
+      if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+        resolve();
+        return;
+      }
+      try {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = language === 'am' ? 'am-ET' : language === 'om' ? 'om-ET' : 'en-US';
+        utterance.rate = 0.95;
+
+        utterance.onend = () => resolve();
+        utterance.onerror = () => resolve();
+
+        window.speechSynthesis.speak(utterance);
+      } catch {
+        resolve();
+      }
     });
   }
 

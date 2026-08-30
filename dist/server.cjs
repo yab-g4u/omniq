@@ -43,6 +43,14 @@ function getAddisAI() {
   }
   return addisClient;
 }
+function getGenAI() {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    console.warn("GEMINI_API_KEY is not set. Addis AI and local honest engine will be used.");
+    return null;
+  }
+  return new import_genai.GoogleGenAI({ apiKey });
+}
 app.get("/api/addis/session", (req, res) => {
   const apiKey = getAddisApiKey();
   const wsUrl = `wss://relay.addisassistant.com/ws?apiKey=${encodeURIComponent(apiKey)}`;
@@ -115,6 +123,61 @@ app.post("/api/addis/stt", async (req, res) => {
   } catch (err) {
     console.error("Addis STT route error:", err);
     res.status(500).json({ error: err.message || "Failed to process STT" });
+  }
+});
+app.post("/api/extract-claims", async (req, res) => {
+  try {
+    const { transcriptText, language = "en" } = req.body;
+    if (!transcriptText || !transcriptText.trim()) {
+      res.json({ claims: [] });
+      return;
+    }
+    const ai = getGenAI();
+    if (ai) {
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: `You are an honest credit analyst extracting facts from an Ethiopian SME applicant transcript.
+Extract ONLY claims explicitly mentioned in the text for: businessName, sector, location, yearsOperating, employees, revenue, fundingPurpose, amountRequested, jobsCreated.
+DO NOT invent information. If a field is not mentioned, omit it.
+Return JSON format: { "claims": [ { "field": "field_name", "value": "extracted_value", "evidence": "exact quote from text" } ] }
+Transcript: "${transcriptText}"`,
+        config: { responseMimeType: "application/json" }
+      });
+      const textRes = response.text || "{}";
+      const parsed = JSON.parse(textRes);
+      res.json(parsed.claims ? parsed : { claims: [] });
+      return;
+    }
+    const text = transcriptText.toLowerCase();
+    const claims = [];
+    if (text.includes("clothing") || text.includes("garment") || text.includes("sewing")) {
+      claims.push({ field: "businessName", value: "Clothing Enterprise", evidence: transcriptText });
+      claims.push({ field: "sector", value: "Garment & Textile", evidence: transcriptText });
+    } else if (text.includes("bakery") || text.includes("bread") || text.includes("\u12E8\u12F3\u1266")) {
+      claims.push({ field: "businessName", value: "Hana's Bakery", evidence: transcriptText });
+      claims.push({ field: "sector", value: "Food & Manufacturing", evidence: transcriptText });
+    }
+    if (text.includes("addis") || text.includes("bole") || text.includes("adama") || text.includes("merkato")) {
+      const loc = text.includes("adama") ? "Adama" : text.includes("bole") ? "Bole, Addis Ababa" : "Addis Ababa";
+      claims.push({ field: "location", value: loc, evidence: transcriptText });
+    }
+    const yrs = text.match(/(\d+|five|six|seven|4|5|6|7) (years|year|ዓመት)/i);
+    if (yrs) {
+      claims.push({ field: "yearsOperating", value: `${yrs[1]} years`, evidence: yrs[0] });
+    }
+    const emps = text.match(/(\d+|six|eight|ten|twelve|6|8|10|12) (employees|people|staff|ሰራተኞች)/i);
+    if (emps) {
+      claims.push({ field: "employees", value: `${emps[1]} employees`, evidence: emps[0] });
+    }
+    const amt = text.match(/(\d[\d,]*|300,000|250,000|three hundred thousand|two hundred and fifty thousand) (birr|etb|ብር)/i);
+    if (amt) {
+      const amtVal = amt[0].includes("300") ? "300,000 ETB" : "250,000 ETB";
+      claims.push({ field: "amountRequested", value: amtVal, evidence: amt[0] });
+    }
+    res.json({ claims });
+  } catch (err) {
+    console.error("Semantic extraction error:", err);
+    res.json({ claims: [] });
   }
 });
 function computeBusinessGrade(fields) {

@@ -1,16 +1,101 @@
-import React, { useState } from 'react';
-import { Sparkles, Phone, ArrowRight, Activity, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  Sparkles,
+  Phone,
+  ArrowRight,
+  Activity,
+  ShieldCheck,
+  CheckCircle2,
+  Play,
+  RotateCcw,
+  MessageSquare,
+  Zap,
+} from 'lucide-react';
 
 interface VesperLandingPageProps {
   onTryDemo: () => void;
   onOpenDashboard: () => void;
 }
 
+interface DemoStep {
+  transcript: { speaker: 'USER' | 'AI'; text: string };
+  extractionNote: string;
+  fieldKey: string;
+  fieldValue: string;
+  quote: string;
+  completeness: number;
+}
+
+const DEMO_STEPS: DemoStep[] = [
+  {
+    transcript: { speaker: 'USER', text: "Hello, my name is Hana. I run a small bakery called Hana's Bakery in Bole." },
+    extractionNote: "Business & Location detected",
+    fieldKey: "Business & Location",
+    fieldValue: "Hana's Bakery (Bole, Addis Ababa)",
+    quote: "I run a small bakery called Hana's Bakery in Bole.",
+    completeness: 20,
+  },
+  {
+    transcript: { speaker: 'AI', text: "Nice to meet you, Hana. How long have you been operating the bakery?" },
+    extractionNote: "AI asking operating longevity...",
+    fieldKey: "Longevity Query",
+    fieldValue: "Interview in progress",
+    quote: "",
+    completeness: 20,
+  },
+  {
+    transcript: { speaker: 'USER', text: "We've been operating for about four years now." },
+    extractionNote: "Operating history confirmed",
+    fieldKey: "Years Operating",
+    fieldValue: "4 Years (Confirmed)",
+    quote: "We've been operating for about four years now.",
+    completeness: 35,
+  },
+  {
+    transcript: { speaker: 'AI', text: "That's great. And how many people currently work in the business?" },
+    extractionNote: "AI querying workforce size...",
+    fieldKey: "Workforce Query",
+    fieldValue: "Interview in progress",
+    quote: "",
+    completeness: 35,
+  },
+  {
+    transcript: { speaker: 'USER', text: "We have six employees." },
+    extractionNote: "Workforce size detected",
+    fieldKey: "Employees",
+    fieldValue: "6 Employees",
+    quote: "We have six employees.",
+    completeness: 55,
+  },
+  {
+    transcript: { speaker: 'USER', text: "We want to buy a larger commercial oven for 250,000 birr." },
+    extractionNote: "Funding purpose & requested loan amount detected",
+    fieldKey: "Loan Amount & Purpose",
+    fieldValue: "250,000 ETB &bull; Commercial Baking Equipment",
+    quote: "We want to buy a larger commercial oven for 250,000 birr.",
+    completeness: 82,
+  },
+];
+
 export const VesperLandingPage: React.FC<VesperLandingPageProps> = ({
   onTryDemo,
   onOpenDashboard,
 }) => {
-  const [menuOpen, setMenuOpen] = useState<boolean>(false);
+  const [currentStepIndex, setCurrentStepIndex] = useState<number>(0);
+  const [isPlaying, setIsPlaying] = useState<boolean>(true);
+
+  // Auto-play demo step animation loop
+  useEffect(() => {
+    if (!isPlaying) return;
+
+    const timer = setInterval(() => {
+      setCurrentStepIndex((prev) => (prev + 1) % DEMO_STEPS.length);
+    }, 3200);
+
+    return () => clearInterval(timer);
+  }, [isPlaying]);
+
+  const activeStep = DEMO_STEPS[currentStepIndex];
 
   return (
     <div className="min-h-screen bg-[#000000] text-white selection:bg-white/20 selection:text-white relative overflow-x-hidden">
@@ -62,7 +147,7 @@ export const VesperLandingPage: React.FC<VesperLandingPageProps> = ({
       </header>
 
       {/* Main Hero Container */}
-      <main className="relative z-10 max-w-4xl mx-auto px-6 pt-16 pb-24 text-center flex flex-col items-center justify-center min-h-[70vh]">
+      <main className="relative z-10 max-w-5xl mx-auto px-6 pt-12 pb-16 text-center flex flex-col items-center justify-center">
         {/* Badge */}
         <div className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-gradient-to-r from-neutral-600 via-neutral-800 to-neutral-950 text-neutral-200 text-xs font-normal border border-white/10 mb-6 shadow-xl">
           <svg className="w-4 h-4 text-white fill-current shadow-sm" viewBox="0 0 24 24">
@@ -83,7 +168,7 @@ export const VesperLandingPage: React.FC<VesperLandingPageProps> = ({
         </p>
 
         {/* Hero Actions */}
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 w-full max-w-md">
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 w-full max-w-md mb-12">
           <button
             onClick={onTryDemo}
             className="w-full sm:w-auto h-11 px-8 rounded-lg bg-gradient-to-b from-white via-neutral-100 to-neutral-300 text-neutral-900 font-bold text-sm hover:from-white hover:to-neutral-100 transition-all shadow-xl shadow-white/10 cursor-pointer flex items-center justify-center gap-2"
@@ -99,6 +184,143 @@ export const VesperLandingPage: React.FC<VesperLandingPageProps> = ({
             <ShieldCheck className="w-4 h-4 text-emerald-400" />
             <span>See Applicant Intelligence</span>
           </button>
+        </div>
+
+        {/* AUTOMATED DEMO CONTAINER (BELOW HERO) */}
+        <div className="w-full max-w-4xl bg-[#0a0a12]/90 border border-white/15 rounded-2xl p-6 shadow-2xl text-left relative overflow-hidden backdrop-blur-xl">
+          {/* Header Bar */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-4 mb-6">
+            <div className="flex items-center gap-3">
+              <span className="w-3 h-3 rounded-full bg-emerald-400 animate-ping" />
+              <div>
+                <h3 className="text-sm font-extrabold uppercase tracking-wider text-white flex items-center gap-2">
+                  AUTOMATED DEMO &mdash; LIVE APPLICATION CONSTRUCTING ITSELF
+                </h3>
+                <p className="text-xs text-neutral-400">
+                  Real-time voice extraction transforming spoken conversation into structured credit packages
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setIsPlaying(!isPlaying)}
+                className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-semibold text-neutral-200 border border-white/15 flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                {isPlaying ? <span className="text-emerald-400">● Live Auto-Play</span> : <span>Paused</span>}
+              </button>
+              <button
+                onClick={onOpenDashboard}
+                className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white shadow-md shadow-emerald-950 flex items-center gap-1 cursor-pointer"
+              >
+                <span>RUN FULL DEMO</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Active Demo Steps Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+            {/* Left: Animated Transcript Feed (6 cols) */}
+            <div className="md:col-span-6 bg-[#11111a] p-4 rounded-xl border border-white/10 flex flex-col justify-between h-[240px]">
+              <div>
+                <div className="flex items-center justify-between mb-3 border-b border-white/10 pb-2">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400 flex items-center gap-1.5">
+                    <MessageSquare className="w-3.5 h-3.5 text-purple-400" />
+                    SPOKEN TRANSCRIPT STREAM
+                  </span>
+                  <span className="text-[10px] font-mono text-purple-400">Step {currentStepIndex + 1} of {DEMO_STEPS.length}</span>
+                </div>
+
+                <div className="space-y-2">
+                  <div
+                    key={currentStepIndex}
+                    className={`p-3 rounded-lg text-xs leading-relaxed transition-all duration-500 animate-fadeIn ${
+                      activeStep.transcript.speaker === 'USER'
+                        ? 'bg-[#181427] border border-purple-500/30 text-purple-100'
+                        : 'bg-[#0f1914] border border-emerald-500/30 text-emerald-100'
+                    }`}
+                  >
+                    <span className="font-bold text-[10px] uppercase block mb-1 opacity-70">
+                      {activeStep.transcript.speaker === 'USER' ? 'APPLICANT' : 'AI ASSISTANT'}
+                    </span>
+                    &ldquo;{activeStep.transcript.text}&rdquo;
+                  </div>
+
+                  {activeStep.extractionNote && (
+                    <div className="text-[11px] text-amber-300 font-mono flex items-center gap-1.5 animate-pulse pl-1">
+                      <Zap className="w-3 h-3 text-amber-400" />
+                      <span>{activeStep.extractionNote}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Step indicator dots */}
+              <div className="flex items-center justify-center gap-1.5 pt-2">
+                {DEMO_STEPS.map((_, idx) => (
+                  <span
+                    key={idx}
+                    onClick={() => {
+                      setCurrentStepIndex(idx);
+                      setIsPlaying(false);
+                    }}
+                    className={`h-1.5 rounded-full transition-all cursor-pointer ${
+                      idx === currentStepIndex ? 'w-6 bg-emerald-400' : 'w-1.5 bg-neutral-700'
+                    }`}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Right: Live Application Fields & Progress (6 cols) */}
+            <div className="md:col-span-6 bg-[#11111a] p-4 rounded-xl border border-white/10 flex flex-col justify-between h-[240px]">
+              <div>
+                <div className="flex items-center justify-between mb-3 border-b border-white/10 pb-2">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">
+                    APPLICATION COMPLETENESS
+                  </span>
+                  <span className="text-base font-extrabold text-emerald-400">
+                    {activeStep.completeness}%
+                  </span>
+                </div>
+
+                {/* Progress bar */}
+                <div className="w-full bg-neutral-800 h-2 rounded-full mb-4 overflow-hidden">
+                  <div
+                    className="bg-gradient-to-r from-emerald-500 to-teal-400 h-full transition-all duration-700"
+                    style={{ width: `${activeStep.completeness}%` }}
+                  />
+                </div>
+
+                {/* Detected Cards */}
+                <div className="space-y-2">
+                  <div className="p-3 rounded-lg bg-[#181824] border border-emerald-500/30">
+                    <span className="text-[10px] font-bold text-neutral-400 uppercase block mb-1">
+                      DETECTED FIELD
+                    </span>
+                    <div className="text-xs font-bold text-white flex items-center justify-between">
+                      <span>{activeStep.fieldKey}</span>
+                      <span className="text-emerald-400 font-semibold">{activeStep.fieldValue}</span>
+                    </div>
+                  </div>
+
+                  {activeStep.quote && (
+                    <div className="text-[10px] text-emerald-300 italic bg-emerald-950/40 p-2 rounded border border-emerald-500/20">
+                      SOURCE: &ldquo;{activeStep.quote}&rdquo;
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-2 text-[10px] text-neutral-400">
+                <span className="flex items-center gap-1 text-emerald-400 font-bold">
+                  <CheckCircle2 className="w-3 h-3" /> Traceable Provenance
+                </span>
+                <span>Click RUN FULL DEMO to interact live</span>
+              </div>
+            </div>
+          </div>
         </div>
       </main>
 

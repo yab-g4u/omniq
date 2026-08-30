@@ -1,9 +1,9 @@
 import { Language } from '../types';
 
 export const GREETINGS: Record<Language, string> = {
-  am: 'እንኳን ወደ ሴኳ (Sequa SME) የብድር አገልግሎት በደህና መጡ። ዛሬ የንግድዎን ታሪክ ሰምቼ የብድር ማመልከቻዎን አብረን እናዘጋጃለን።',
-  om: "Baga gara tajaajila liqii Sequa SME nagaan dhuftan. Akkam jirtu? Har'a waan daldala keessanii mari'achuun iyyannoo keessan waliin qopheessina.",
-  en: "Welcome to Sequa SME Support. I'm here to listen to your story and help you prepare your credit application today.",
+  am: 'ሰላም፣ ወደ Sequa SME Support እንኳን በደህና መጡ።',
+  om: "Baga gara tajaajila liqii Sequa SME nagaan dhuftan.",
+  en: 'Welcome to Sequa SME Support.',
 };
 
 export const ELIGIBILITY_QUESTIONS: Record<Language, { 1: string; 2: string }> = {

@@ -15,6 +15,7 @@ import {
   evaluateRegistrationAnswer,
   evaluateYearsOperatingAnswer,
 } from '../lib/library';
+import { aguiLayer } from '../lib/aguiEventLayer';
 
 export interface LiveUtterance {
   id: string;
@@ -127,9 +128,14 @@ export function useAddisRealtime({
     async (userText: string, currentLang: Language) => {
       if (!userText.trim()) return;
       const cleanText = userText.trim();
+      const msgId = `owner-${Date.now()}`;
+
+      // Emit AG-UI Transcript Events
+      aguiLayer.emitTextMessageStart(msgId, 'user');
+      aguiLayer.emitTextMessageContent(msgId, 'user', cleanText);
 
       const userUtterance: LiveUtterance = {
-        id: `owner-${Date.now()}`,
+        id: msgId,
         speaker: 'owner',
         speakerLabel: 'OWNER',
         text: cleanText,
@@ -140,6 +146,8 @@ export function useAddisRealtime({
       setTranscriptLogs((prev: LiveUtterance[]) => [...prev, userUtterance]);
       fullConversationRef.current.push({ speaker: 'Owner', text: cleanText });
       onTurnComplete?.(cleanText, true);
+
+      aguiLayer.emitTextMessageEnd(msgId, 'user', cleanText);
 
       const fullText = fullConversationRef.current.map((t) => `${t.speaker}: ${t.text}`).join('\n');
       runExtraction(fullText, currentLang);

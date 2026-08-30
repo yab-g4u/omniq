@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { VesperHeader, VesperView } from './components/VesperHeader';
 import { VesperLandingPage } from './components/VesperLandingPage';
 import { LenderPortal } from './components/LenderPortal';
 import { IVRPhoneSimulator } from './components/IVRPhoneSimulator';
@@ -7,9 +6,11 @@ import { ArchitectureView } from './components/ArchitectureView';
 import { SpikeEvaluationModal } from './components/SpikeEvaluationModal';
 import { IVRCallRecord } from './types';
 
+export type ViewMode = 'landing' | 'dashboard' | 'ivr_phone' | 'architecture';
+
 export const App: React.FC = () => {
   // Default view is 'landing' so users see the Vesper landing page first
-  const [currentView, setCurrentView] = useState<VesperView>('landing');
+  const [currentView, setCurrentView] = useState<ViewMode>('landing');
   const [isSpikeOpen, setIsSpikeOpen] = useState<boolean>(false);
 
   // Initialize call records list for live completed intake sessions
@@ -30,16 +31,6 @@ export const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#0a0a0e] text-white flex flex-col justify-between selection:bg-emerald-500/30 selection:text-emerald-200">
-      {/* Hide header on landing view to present clean single-viewport landing page */}
-      {currentView !== 'landing' && (
-        <VesperHeader
-          currentView={currentView}
-          setCurrentView={setCurrentView}
-          onOpenSpike={() => setIsSpikeOpen(true)}
-          totalCallsCount={calls.length}
-        />
-      )}
-
       {/* Main Viewport Container */}
       <main className="flex-1 w-full">
         {currentView === 'landing' && (
