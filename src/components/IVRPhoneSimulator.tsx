@@ -218,12 +218,12 @@ export const IVRPhoneSimulator: React.FC<IVRPhoneSimulatorProps> = ({
               </svg>
             </div>
             <span className="text-xl font-bold tracking-tight text-white">
-              Vesper<span className="text-purple-400">.ai</span>
+              SEQUA<span className="text-emerald-400 font-normal"> | Applicant Intelligence</span>
             </span>
           </div>
 
           <span className="px-3 py-1 rounded-full text-xs font-medium bg-neutral-900 text-neutral-300 border border-white/10">
-            Voice Agent Demo
+            Toll-Free 8800 Voice Intake
           </span>
         </div>
 

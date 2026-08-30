@@ -1,38 +1,38 @@
 import { Language } from '../types';
 
 export const GREETINGS: Record<Language, string> = {
-  am: 'እንኳን ወደ ሴኳ ኤስ.ኤም.ኢ (Sequa SME) የብድር ድጋፍ አገልግሎት በደህና መጡ። እኔ የብድር መገምገሚያ ረዳትዎ ነኝ።',
-  om: "Baga gara tajaajila liqii Sequa SME nagaan dhuftan. Ani ogeessa iyyannoo liqii keessan mirkaneessudha.",
-  en: 'Welcome to Sequa SME Support. I am your automated credit assessment assistant.',
+  am: 'እንኳን ወደ ሴኳ (Sequa SME) የብድር አገልግሎት በደህና መጡ። ዛሬ የንግድዎን ታሪክ ሰምቼ የብድር ማመልከቻዎን አብረን እናዘጋጃለን።',
+  om: "Baga gara tajaajila liqii Sequa SME nagaan dhuftan. Akkam jirtu? Har'a waan daldala keessanii mari'achuun iyyannoo keessan waliin qopheessina.",
+  en: "Welcome to Sequa SME Support. I'm here to listen to your story and help you prepare your credit application today.",
 };
 
 export const ELIGIBILITY_QUESTIONS: Record<Language, { 1: string; 2: string }> = {
   am: {
-    1: 'ንግድዎ በኢትዮጵያ በሕጋዊ መንገድ የተመዘገበ ነው?',
-    2: 'ንግድዎ ቢያንስ ለሁለት ዓመታት ሲሰራ ቆይቷል?',
+    1: 'በመጀመሪያ ደረጃ፣ ንግድዎ በኢትዮጵያ በሕጋዊ መንገድ የተመዘገበ ነው?',
+    2: 'በጣም ጥሩ! ለመሆኑ ንግድዎን ከጀመሩ ቢያንስ ሁለት ዓመት አልፎታል?',
   },
   om: {
-    1: "Daldalli keessan Itoophiyaa keessatti seeraan kan galmaa'edha?",
-    2: "Daldalli keessan yoo xiqqaate waggaa lamaaf hojjechaa tureeraa?",
+    1: "Jalqqaba irratti, daldalli keessan Itoophiyaa keessatti seeraan kan galmaa'edha?",
+    2: "Baga gammaddan! Akkasumas daldala keessan hojjechiisuu erga eegaltanii yoo xiqqaate waggaa lama ta'eeraa?",
   },
   en: {
-    1: 'Is your business legally registered in Ethiopia?',
-    2: 'Has your business been operating for at least two years?',
+    1: 'To start off, is your business legally registered in Ethiopia?',
+    2: 'That is great! And has your business been operating for at least two years?',
   },
 };
 
 export const ELIGIBILITY_RESPONSES: Record<Language, { true: string; false: string }> = {
   am: {
-    true: 'እንኳን ደስ አለዎት! ድርጅትዎ የመጀመሪያ ደረጃ ብቁነትን አሟልቷል። አሁን ስለ ንግድዎ ዝርዝር ሁኔታ እንነጋገራለን።',
-    false: 'ይቅርታ፣ ድርጅትዎ ለአሁኑ የብድር መስፈርት አይሟላም። ለተጨማሪ መረጃ እናመሰግናለን፤ መልካም ቀን።',
+    true: 'እንኳን ደስ አለዎት! የመጀመሪያ ደረጃ ብቁነትን አሟልተዋል። አሁን ስለ ንግድዎ፣ ገቢዎ እና የብድር ፍላጎትዎ በዝርዝር እንነጋገር።',
+    false: 'ስለሰጡን መረጃ እናመሰግናለን። ይቅርታ፣ ለአሁኑ የብድር መስፈርት ማሟላት አልተቻለም። መልካም የስራ ጊዜ ይሁንልዎት።',
   },
   om: {
-    true: "Baga gammaddan! Daldalli keessan ulaagaa calallii jalqabaa guuteera. Amma waa'ee daldala keessanii bal'inaan mari'anna.",
-    false: 'Dhiifama, daldalli keessan ulaagaa liqii ammaa hin guutu. Galatoomaa, guyyaa gaarii.',
+    true: "Baga gammaddan! Ulaagaa calallii jalqabaa guuttaniirtu. Amma waa'ee daldala keessaniifi hamma maallaqa barbaaddanii bal'inaan mari'anna.",
+    false: 'Waan nuu ibsitaniif galatoomaa. Dhiifama, ulaagaa liqii ammaa ulaagaan hin guutamne. Guyyaa gaarii qabaadhaa.',
   },
   en: {
-    true: 'Congratulations! Your business meets our initial eligibility requirements. Let us now discuss your business details.',
-    false: 'We are sorry, but your business does not currently meet the eligibility criteria for this credit facility. Thank you for your time and have a great day.',
+    true: "Wonderful news! Your business meets our initial eligibility criteria. Let's now discuss your enterprise operations, revenue, and funding needs.",
+    false: 'Thank you for providing your information. Unfortunately, your business does not currently meet our minimum eligibility criteria. Wishing you great success!',
   },
 };
 
@@ -51,20 +51,20 @@ export function getEligibilityResponse(language: Language, isEligible: boolean):
 }
 
 /**
- * Evaluates whether a user's verbal input is affirmative or negative for Question 1 (Registration).
+ * Natural Ethiopian speech understanding for Question 1 (Registration).
  */
 export function evaluateRegistrationAnswer(text: string): boolean | null {
   const lower = text.toLowerCase().trim();
 
   const positiveMarkers = [
-    'አዎ', 'አዎን', 'ተመዝግበናል', 'አዎ ተመዝግበናል', 'አዎ ተመዝግቧል', 'ሕጋዊ ነው', 'ሕጋዊ',
-    'yes', 'yeah', 'yep', 'sure', 'registered', 'we are registered', "we're registered", 'legally',
-    'eyyee', 'galmaa\'eera', 'galmaa\'aa', 'seeraan'
+    'አዎ', 'አዎን', 'ተመዝግበናል', 'አዎ ተመዝግበናል', 'አዎ ተመዝግቧል', 'ሕጋዊ ነው', 'ሕጋዊ', 'ፈቃድ አለን', 'ፈቃድ',
+    'yes', 'yeah', 'yep', 'sure', 'registered', 'we are registered', "we're registered", 'legally', 'licensed',
+    'eyyee', 'galmaa\'eera', 'galmaa\'aa', 'seeraan', 'heeyyama'
   ];
 
   const negativeMarkers = [
-    'አይ', 'አይደለም', 'አልተመዘገበም', 'አልተመዘገብንም', 'ገና ነው',
-    'no', 'nope', 'not registered', 'unregistered', 'not yet',
+    'አይ', 'አይደለም', 'አልተመዘገበም', 'አልተመዘገብንም', 'ገና ነው', 'ፈቃድ የለንም',
+    'no', 'nope', 'not registered', 'unregistered', 'not yet', 'no license',
     'lakki', 'hinoolle', 'hin galmaa\'ine'
   ];
 
@@ -80,15 +80,14 @@ export function evaluateRegistrationAnswer(text: string): boolean | null {
 }
 
 /**
- * Evaluates whether a user's verbal input indicates years_operating >= 2 for Question 2.
+ * Natural Ethiopian speech understanding for Question 2 (Longevity >= 2 years).
  */
 export function evaluateYearsOperatingAnswer(text: string): boolean | null {
   const lower = text.toLowerCase().trim();
 
-  // Explicit negative numbers/phrases (less than 2 years)
   const explicitIneligible = [
-    '1 year', 'one year', '6 month', 'six month', '3 month', 'three month', 'started last year',
-    'አንድ ዓመት', '1 ዓመት', '6 ወር', 'ስድስት ወር', 'አይ', 'አይደለም', 'ገና 1', 'ገና አንድ',
+    '1 year', 'one year', '6 month', 'six month', '3 month', 'three month', 'started last year', 'just started',
+    'አንድ ዓመት', '1 ዓመት', '6 ወር', 'ስድስት ወር', 'አይ', 'አይደለም', 'ገና 1', 'ገና አንድ', 'አዲስ ነው',
     'waggaa 1', 'waggaa tokko', 'ji\'a'
   ];
 
@@ -96,13 +95,12 @@ export function evaluateYearsOperatingAnswer(text: string): boolean | null {
     if (lower.includes(marker)) return false;
   }
 
-  // Explicit positive numbers/phrases (>= 2 years)
   const explicitEligible = [
     '2', '3', '4', '5', '6', '7', '8', '9', '10',
     'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
     'ሁለት', 'ሦስት', 'ሶስት', 'አራት', 'አምስት', 'ስድስት', 'ሰባት', 'ስምንት', 'ዘጠኝ', 'አሥር', 'አስር',
-    'አዎ', 'አዎን', 'ቆይቷል', 'ከሁለት ዓመት', 'ከ3 ዓመት', 'ከሶስት',
-    'yes', 'yeah', 'yep', 'operating', 'years', 'waggaa lama'
+    'አዎ', 'አዎን', 'ቆይቷል', 'ከሁለት ዓመት', 'ከ3 ዓመት', 'ከሶስት ዓመት', 'ብዙ ዓመት',
+    'yes', 'yeah', 'yep', 'operating', 'years', 'waggaa lama', 'waggaa sadii'
   ];
 
   for (const marker of explicitEligible) {

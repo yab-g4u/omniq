@@ -6,11 +6,11 @@ import {
   Layers,
   Radio,
   FileCheck,
-  HelpCircle,
-  TrendingUp,
+  Activity,
+  Cpu,
 } from 'lucide-react';
 
-export type VesperView = 'dashboard' | 'ivr_phone' | 'architecture';
+export type VesperView = 'landing' | 'dashboard' | 'ivr_phone' | 'architecture';
 
 interface VesperHeaderProps {
   currentView: VesperView;
@@ -26,7 +26,7 @@ export const VesperHeader: React.FC<VesperHeaderProps> = ({
   totalCallsCount,
 }) => {
   return (
-    <header className="sticky top-0 z-40 bg-[#0d0d11]/90 backdrop-blur-md border-b border-white/10">
+    <header className="sticky top-0 z-40 bg-[#0a0a0f]/95 backdrop-blur-md border-b border-white/10">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16 gap-4">
           {/* Logo & Brand Identity */}
@@ -34,25 +34,27 @@ export const VesperHeader: React.FC<VesperHeaderProps> = ({
             onClick={() => setCurrentView('dashboard')}
             className="flex items-center gap-3 shrink-0 cursor-pointer select-none"
           >
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 via-teal-500 to-amber-500 flex items-center justify-center shadow-lg shadow-emerald-950 text-white font-bold">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 via-teal-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-emerald-950 text-white font-bold">
               <ShieldCheck className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-lg font-bold tracking-tight text-white">Vesper<span className="text-emerald-400">.ai</span></span>
+                <span className="text-lg font-bold tracking-tight text-white">
+                  SEQUA <span className="text-emerald-400 font-normal">| Applicant Intelligence</span>
+                </span>
                 <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-                  IVR Telephony &bull; Toll-Free 8800
+                  Human-in-the-Loop AI
                 </span>
               </div>
               <p className="text-[11px] text-neutral-400 flex items-center gap-1.5">
                 <Radio className="w-2.5 h-2.5 text-emerald-400 animate-pulse" />
-                <span>AI Business Grading &amp; Honest Underwriting Portal</span>
+                <span>Honest Voice Extraction &bull; Evidence Provenance &bull; 8800 Toll-Free</span>
               </p>
             </div>
           </div>
 
           {/* Nav Tabs */}
-          <nav className="hidden md:flex items-center space-x-1.5 bg-neutral-900/80 p-1 rounded-xl border border-white/10">
+          <nav className="hidden md:flex items-center space-x-1.5 bg-neutral-900/90 p-1 rounded-xl border border-white/10">
             <button
               onClick={() => setCurrentView('dashboard')}
               className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
@@ -61,8 +63,8 @@ export const VesperHeader: React.FC<VesperHeaderProps> = ({
                   : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
               }`}
             >
-              <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              <span>Lender Grading Portal</span>
+              <FileCheck className="w-4 h-4 text-emerald-600" />
+              <span>SEQUA | Applicant Intelligence</span>
               {totalCallsCount > 0 && (
                 <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-emerald-500/20 text-emerald-700 font-bold">
                   {totalCallsCount}
@@ -79,7 +81,7 @@ export const VesperHeader: React.FC<VesperHeaderProps> = ({
               }`}
             >
               <Phone className="w-4 h-4 text-amber-500" />
-              <span>Simulate Feature Phone (8800)</span>
+              <span>Simulate Voice Call (8800)</span>
             </button>
 
             <button
@@ -99,7 +101,7 @@ export const VesperHeader: React.FC<VesperHeaderProps> = ({
           <div className="flex items-center gap-2.5">
             <button
               onClick={onOpenSpike}
-              className="px-3 py-1.5 rounded-xl bg-neutral-850 hover:bg-neutral-800 text-neutral-300 hover:text-white text-xs font-medium border border-white/10 flex items-center gap-1.5 transition-colors cursor-pointer"
+              className="px-3 py-1.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white text-xs font-medium border border-white/10 flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <Sparkles className="w-3.5 h-3.5 text-amber-400" />
               <span className="hidden sm:inline">ASR Accuracy Spike</span>
@@ -124,7 +126,7 @@ export const VesperHeader: React.FC<VesperHeaderProps> = ({
             }`}
           >
             <ShieldCheck className="w-3.5 h-3.5" />
-            <span>Portal</span>
+            <span>Applicant Intelligence</span>
           </button>
           <button
             onClick={() => setCurrentView('ivr_phone')}
@@ -133,7 +135,7 @@ export const VesperHeader: React.FC<VesperHeaderProps> = ({
             }`}
           >
             <Phone className="w-3.5 h-3.5" />
-            <span>Phone</span>
+            <span>Voice Call</span>
           </button>
           <button
             onClick={() => setCurrentView('architecture')}

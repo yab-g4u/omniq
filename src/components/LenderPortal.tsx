@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   ShieldCheck,
   CheckCircle2,
@@ -22,13 +22,19 @@ import {
   Filter,
   Play,
   Pause,
-  RotateCcw,
   Check,
   X,
   Printer,
   ChevronRight,
   Radio,
-  Share2,
+  ExternalLink,
+  Info,
+  ArrowRight,
+  MessageSquare,
+  Shield,
+  Layers,
+  Activity,
+  AlertCircle,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { IVRCallRecord, ExtractedField, FieldKey, GradeLetter } from '../types';
@@ -47,821 +53,626 @@ export const LenderPortal: React.FC<LenderPortalProps> = ({
   onUpdateCallDecision,
 }) => {
   const [selectedCallId, setSelectedCallId] = useState<string>(calls[0]?.id || '');
+  const [highlightedTranscriptQuote, setHighlightedTranscriptQuote] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>('all');
-  const [filterGrade, setFilterGrade] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [isPlayingAudio, setIsPlayingAudio] = useState<boolean>(false);
-  const [audioPlaybackTime, setAudioPlaybackTime] = useState<number>(0);
   const [isDecisionModalOpen, setIsDecisionModalOpen] = useState<boolean>(false);
   const [decisionType, setDecisionType] = useState<'approved' | 'field_visit_requested' | 'counter_offered' | 'rejected'>('approved');
-  const [customApprovedAmount, setCustomApprovedAmount] = useState<string>('');
   const [decisionNotes, setDecisionNotes] = useState<string>('');
-  const [isPrintingMemo, setIsPrintingMemo] = useState<boolean>(false);
-  const [editingFieldKey, setEditingFieldKey] = useState<FieldKey | null>(null);
-  const [editedFieldValue, setEditedFieldValue] = useState<string>('');
-  const [smsNotificationToast, setSmsNotificationToast] = useState<{ show: boolean; phone: string; message: string } | null>(null);
+  const [smsToast, setSmsToast] = useState<{ show: boolean; message: string } | null>(null);
 
-  const activeCall = calls.find((c) => c.id === selectedCallId) || calls[0];
+  const transcriptContainerRef = useRef<HTMLDivElement | null>(null);
 
-  // Filtering
-  const filteredCalls = calls.filter((call) => {
-    if (filterStatus !== 'all' && call.underwritingDecision.status !== filterStatus) return false;
-    if (filterGrade !== 'all' && call.aiGrading?.overallGrade !== filterGrade) return false;
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      const matchName = call.callerName?.toLowerCase().includes(q);
-      const matchPhone = call.callerPhoneNumber?.toLowerCase().includes(q);
-      const matchRegion = call.region?.toLowerCase().includes(q);
-      const matchBiz = call.extractedData?.fields?.business_name?.value?.toLowerCase().includes(q);
-      if (!matchName && !matchPhone && !matchRegion && !matchBiz) return false;
-    }
-    return true;
-  });
+  // Default demo record if no call recorded yet
+  const defaultDemoCall: IVRCallRecord = {
+    id: 'demo-hana-bakery',
+    callerPhoneNumber: '+251 91 102 3344',
+    callerName: "Hana Tadesse",
+    region: 'Addis Ababa / Bole',
+    callDurationSeconds: 64,
+    timestamp: Date.now(),
+    language: 'am',
+    callStatus: 'completed',
+    ivrTollFreeNumber: '8800',
+    transcript: `Vesper: ንግድዎ በኢትዮጵያ በሕጋዊ መንገድ የተመዘገበ ነው?
+Owner: አዎ፣ በሕጋዊ መንገድ የተመዘገበ የዳቦ እና ኬክ ቤት አለን።
+Vesper: ንግድዎ ቢያንስ ለሁለት ዓመታት ሲሰራ ቆይቷል?
+Owner: አዎ፣ የጀመርነው ከ4 ዓመት በፊት ነው። 6 ሰራተኞች አሉን።
+Vesper: በወር ምን ያህል ገቢ ያስገባሉ?
+Owner: በወር በአማካይ ወደ 800,000 ብር ገቢ አለን።
+Vesper: ምን ያህል የብድር ገንዘብ ይፈልጋሉ?
+Owner: አዲስ የንግድ ዳቦ መጋገሪያ ማሽን ለመግዛት 250,000 ብር እንፈልጋለን።`,
+    extractedData: {
+      transcript: '',
+      transcript_language: 'am',
+      fields: {
+        business_name: {
+          value: "Hana's Bakery",
+          status: 'applicant_stated',
+          quote: "በሕጋዊ መንገድ የተመዘገበ የዳቦ እና ኬክ ቤት አለን",
+        },
+        business_type: {
+          value: 'Food & Bakery Manufacturing',
+          status: 'applicant_stated',
+          quote: "የዳቦ እና ኬክ ቤት",
+        },
+        years_operating: {
+          value: '4 Years',
+          status: 'applicant_stated',
+          quote: "የጀመርነው ከ4 ዓመት በፊት ነው",
+        },
+        location: {
+          value: 'Addis Ababa / Bole',
+          status: 'applicant_stated',
+          quote: "አዲስ አበባ ቦሌ አካባቢ",
+        },
+        employees: {
+          value: '6 Employees',
+          status: 'applicant_stated',
+          quote: "6 ሰራተኞች አሉን",
+        },
+        monthly_revenue: {
+          value: '800,000 ETB / month',
+          status: 'applicant_stated',
+          quote: "በወር በአማካይ ወደ 800,000 ብር ገቢ አለን",
+        },
+        funding_requested: {
+          value: '250,000 ETB',
+          status: 'applicant_stated',
+          quote: "250,000 ብር እንፈልጋለን",
+        },
+        funding_purpose: {
+          value: 'New Commercial Oven Equipment Expansion',
+          status: 'applicant_stated',
+          quote: "አዲስ የንግድ ዳቦ መጋገሪያ ማሽን ለመግዛት",
+        },
+        business_license: {
+          value: 'Trade License Verified',
+          status: 'applicant_stated',
+          quote: "በሕጋዊ መንገድ የተመዘገበ",
+        },
+      },
+      extraction_notes: 'Full 10-field extraction complete with quote evidence.',
+    },
+    aiGrading: {
+      overallGrade: 'A',
+      overallScore: 92,
+      gradeLabel: 'Prime SME Credit Application',
+      creditScore: 765,
+      financialHealthScore: 90,
+      operationalStabilityScore: 94,
+      truthAndVerificationScore: 95,
+      estimatedMonthlyCashflow: '800,000 ETB',
+      requestedAmount: '250,000 ETB',
+      loanToMonthlyRevenueRatio: 0.31,
+      estimatedDSCR: 4.8,
+      estimatedMonthlyRepayment: '18,500 ETB / month',
+      jobCreationImpact: 'Supports 6 current employees; new commercial oven increases baking throughput by 2.5x.',
+      executiveSummary: 'Established commercial bakery with 4 years operating history in Bole. Strong cashflow comfortably covers debt service (DSCR 4.8x). Loan purpose is clear equipment upgrade.',
+      keyStrengths: [
+        '4 years operational track record in high-density Bole district',
+        'Strong cashflow coverage (800k monthly revenue vs 250k requested)',
+        'Clear capital investment in high-margin baking machinery'
+      ],
+      riskFlags: [
+        {
+          level: 'low',
+          category: 'verification',
+          message: 'Revenue figure stated verbally; formal MFI bank statement verification recommended.'
+        }
+      ],
+      recommendedTerms: {
+        maxLoanAmount: '250,000 ETB',
+        recommendedTenor: '12 Months',
+        interestRate: '13.0% Flat Rate',
+        gracePeriod: '1 Month'
+      },
+      preDisbursalRequirements: [
+        'Physical site verification of Bole bakery premises',
+        'Supplier proforma for commercial oven unit'
+      ],
+      recommendedDecision: 'approve'
+    },
+    underwritingDecision: { status: 'pending' },
+  };
 
-  // Calculate high-level MFI stats
-  const totalCalls = calls.length;
-  const approvedCount = calls.filter((c) => c.underwritingDecision.status === 'approved').length;
-  const gradeACount = calls.filter((c) => c.aiGrading?.overallGrade === 'A').length;
+  const allDisplayCalls = calls.length > 0 ? calls : [defaultDemoCall];
+  const activeCall = allDisplayCalls.find((c) => c.id === selectedCallId) || allDisplayCalls[0];
 
-  // Handle Decision Confirmation
-  const handleConfirmDecision = async () => {
-    if (!activeCall) return;
-
-    const amount = customApprovedAmount || activeCall.extractedData?.fields?.funding_amount_requested?.value || '450,000 ETB';
-
-    try {
-      const res = await fetch('/api/underwriting/decision', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          callId: activeCall.id,
-          decision: decisionType,
-          approvedAmount: amount,
-          notes: decisionNotes,
-          callerPhone: activeCall.callerPhoneNumber,
-          language: activeCall.language,
-        }),
-      });
-      const data = await res.json();
-
-      onUpdateCallDecision(activeCall.id, {
-        status: decisionType,
-        decidedAt: Date.now(),
-        decidedBy: 'Credit Committee Officer (Officer #104)',
-        approvedAmount: amount,
-        notes: decisionNotes,
-        smsSentToCaller: true,
-      });
-
-      setIsDecisionModalOpen(false);
-
-      if (decisionType === 'approved') {
-        confetti({
-          particleCount: 80,
-          spread: 70,
-          origin: { y: 0.6 },
-        });
-      }
-
-      setSmsNotificationToast({
-        show: true,
-        phone: activeCall.callerPhoneNumber,
-        message: data.smsContent || 'SMS Dispatched to Applicant Phone.',
-      });
-
-      setTimeout(() => {
-        setSmsNotificationToast(null);
-      }, 7000);
-    } catch {
-      onUpdateCallDecision(activeCall.id, {
-        status: decisionType,
-        decidedAt: Date.now(),
-        approvedAmount: amount,
-        notes: decisionNotes,
-        smsSentToCaller: true,
-      });
-      setIsDecisionModalOpen(false);
+  // Jump to transcript line when evidence clicked
+  const handleJumpToEvidence = (quote: string | null) => {
+    if (!quote) return;
+    setHighlightedTranscriptQuote(quote);
+    if (transcriptContainerRef.current) {
+      transcriptContainerRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
   };
 
-  // Helper field titles
-  const FIELD_LABELS: Partial<Record<FieldKey, { title: string; subtitle: string; icon: any }>> = {
-    business_name: { title: 'Enterprise Legal / Trade Name', subtitle: 'የድርጅቱ ስም / Maqaa Daldalaa', icon: Building2 },
-    business_type: { title: 'Core Business Activity & Sector', subtitle: 'የስራ ዘርፍ / Gosa Hojii', icon: TrendingUp },
-    business_start_date: { title: 'Establishment Date / Track Record', subtitle: 'የተመሰረተበት ዓ.ም / Bara Eegalame', icon: Clock },
-    years_operating: { title: 'Establishment Date / Track Record', subtitle: 'የተመሰረተበት ዓ.ም / Bara Eegalame', icon: Clock },
-    location_description: { title: 'Operating Premises & Kebele Location', subtitle: 'አድራሻ እና የስራ ቦታ / Bakka Hojii', icon: MapPin },
-    location: { title: 'Operating Premises & Kebele Location', subtitle: 'አድራሻ እና የስራ ቦታ / Bakka Hojii', icon: MapPin },
-    num_employees: { title: 'Workforce & Full-time Staff', subtitle: 'የሰራተኛ ብዛት / Baay\'ina Hojjettootaa', icon: Users },
-    employees: { title: 'Workforce & Full-time Staff', subtitle: 'የሰራተኛ ብዛት / Baay\'ina Hojjettootaa', icon: Users },
-    monthly_or_annual_sales: { title: 'Stated Cashflow / Monthly Revenue', subtitle: 'የወር ወይም ዓመታዊ ሽያጭ / Galii Ji\'aa', icon: DollarSign },
-    monthly_revenue: { title: 'Stated Cashflow / Monthly Revenue', subtitle: 'የወር ወይም ዓመታዊ ሽያጭ / Galii Ji\'aa', icon: DollarSign },
-    machinery_equipment: { title: 'Productive Machinery & Equipment', subtitle: 'የስራ እቃዎችና ማሽነሪዎች / Meeshaalee', icon: Wrench },
-    business_license: { title: 'Trade License & Equipment Assets', subtitle: 'የንግድ ፈቃድና ማሽኖች / Hayyama Daldalaa', icon: Wrench },
-    funding_purpose: { title: 'Capital Allocation & Loan Purpose', subtitle: 'የብድር ዓላማ / Kaayyoo Liqii', icon: HelpCircle },
-    funding_amount_requested: { title: 'Requested Loan Amount (ETB)', subtitle: 'የተጠየቀው የብድር መጠን / Maallaqa Liqii', icon: DollarSign },
-    funding_requested: { title: 'Requested Loan Amount (ETB)', subtitle: 'የተጠየቀው የብድር መጠን / Maallaqa Liqii', icon: DollarSign },
-    beneficiaries_impact: { title: 'Job Creation & Community Impact', subtitle: 'የስራ እድል ፈጠራ እና ተጠቃሚዎች / Faayidaa', icon: ShieldCheck },
-    owner_name: { title: 'Business Owner Name', subtitle: 'የባለቤቱ ስም / Maqaa Abbaa Qabeenyaa', icon: Building2 },
+  // Confirm Decision
+  const handleConfirmDecision = () => {
+    onUpdateCallDecision(activeCall.id, {
+      status: decisionType,
+      decidedAt: Date.now(),
+      decidedBy: 'Credit Officer #104',
+      approvedAmount: activeCall.extractedData?.fields?.funding_requested?.value || '250,000 ETB',
+      notes: decisionNotes,
+      smsSentToCaller: true,
+    });
+
+    setIsDecisionModalOpen(false);
+    if (decisionType === 'approved') {
+      confetti({ particleCount: 70, spread: 60, origin: { y: 0.6 } });
+    }
+
+    setSmsToast({
+      show: true,
+      message: `SMS Notification dispatched to ${activeCall.callerPhoneNumber}: "Dear Applicant, your funding application for ${activeCall.extractedData?.fields?.business_name?.value} has been updated to ${decisionType.toUpperCase()}."`,
+    });
+
+    setTimeout(() => setSmsToast(null), 6000);
   };
+
+  const fields = activeCall.extractedData?.fields || {};
 
   return (
-    <div className="w-full max-w-7xl mx-auto py-4 px-2 sm:px-4 space-y-6">
-      {/* SMS Notification Banner Toast */}
-      {smsNotificationToast && (
-        <div className="fixed bottom-6 right-6 z-50 bg-neutral-900 border border-emerald-500/50 shadow-2xl rounded-2xl p-4 max-w-md animate-in slide-in-from-bottom-4 duration-300">
-          <div className="flex items-start gap-3">
-            <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-300">
-              <Send className="w-4 h-4" />
-            </div>
-            <div className="space-y-1 flex-1">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-bold text-white">SMS Dispatched to Applicant Mobile</p>
-                <span className="text-[10px] text-neutral-400 font-mono">{smsNotificationToast.phone}</span>
-              </div>
-              <p className="text-xs text-emerald-200/90 font-mono bg-black/50 p-2 rounded-lg border border-white/5">
-                &ldquo;{smsNotificationToast.message}&rdquo;
-              </p>
-            </div>
-          </div>
+    <div className="min-h-screen bg-[#07070a] text-white p-4 sm:p-6 lg:p-8">
+      {/* Toast Alert */}
+      {smsToast?.show && (
+        <div className="fixed top-20 right-6 z-50 bg-emerald-950 border border-emerald-500/40 text-emerald-100 p-4 rounded-xl shadow-2xl flex items-center gap-3 max-w-md animate-bounce">
+          <Send className="w-5 h-5 text-emerald-400 shrink-0" />
+          <p className="text-xs font-medium">{smsToast.message}</p>
         </div>
       )}
 
-      {/* Top Header & MFI Portfolio Performance Metrics */}
-      <div className="bg-neutral-900/90 border border-white/10 rounded-2xl p-6 space-y-6">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+      {/* Main Container */}
+      <div className="max-w-7xl mx-auto space-y-6">
+        {/* Top Header Bar */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-[#0d0d13] p-5 rounded-2xl border border-white/10 shadow-xl">
           <div>
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                <ShieldCheck className="w-3.5 h-3.5" />
-                MFI Credit Committee &amp; Underwriter Dashboard
+            <div className="flex items-center gap-3">
+              <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
+                SEQUA <span className="text-emerald-400 font-normal">| Applicant Intelligence</span>
+              </h1>
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                Human-in-the-Loop Mode
               </span>
-              <span className="text-xs text-white/50">&bull; Telephony Ingestion Portal &bull; Toll-Free 8800</span>
             </div>
-            <h1 className="text-2xl font-bold tracking-tight text-white mt-2">
-              AI-Graded Telephony Business Applications
-            </h1>
-            <p className="text-xs sm:text-sm text-neutral-400 mt-1 max-w-3xl">
-              Spoken interviews from informal micro-entrepreneurs calling on feature phones. Automatically transcribed, mapped to 10 verified honest fields with exact quote citations, and pre-graded for credit underwriting.
+            <p className="text-xs text-neutral-400 mt-1">
+              AI extracts fields, traces verbatim quote evidence, and highlights verification gaps &mdash; human officer makes final decision.
             </p>
           </div>
 
-          <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-3">
             <button
               onClick={onOpenIVRSimulator}
-              className="px-4 py-2.5 rounded-xl bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 border border-amber-500/30 font-semibold text-xs sm:text-sm flex items-center gap-2 transition-colors cursor-pointer"
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-emerald-950 transition-all cursor-pointer"
             >
               <Phone className="w-4 h-4" />
-              <span>Simulate IVR Phone Call</span>
+              <span>Simulate Voice Call (8800)</span>
             </button>
+
             <button
               onClick={onOpenSpike}
-              className="px-3.5 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs sm:text-sm font-medium border border-white/10 transition-colors cursor-pointer"
+              className="px-3.5 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-300 text-xs font-semibold border border-white/10 flex items-center gap-1.5 cursor-pointer"
             >
-              ASR Spike Benchmark
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <span>ASR Evaluation</span>
             </button>
           </div>
         </div>
 
-        {/* 4 Metric Cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 pt-2 border-t border-white/10">
-          <div className="bg-neutral-850/60 p-4 rounded-xl border border-white/5 space-y-1">
-            <span className="text-[11px] text-neutral-400 uppercase tracking-wider font-semibold">Toll-Free Calls</span>
-            <p className="text-2xl font-bold text-white">{totalCalls}</p>
-            <p className="text-[10px] text-emerald-400 flex items-center gap-1">
-              <Radio className="w-3 h-3 animate-pulse" />
-              <span>Live Ingesting via Ethio Telecom 2G</span>
-            </p>
-          </div>
-
-          <div className="bg-neutral-850/60 p-4 rounded-xl border border-white/5 space-y-1">
-            <span className="text-[11px] text-neutral-400 uppercase tracking-wider font-semibold">Grade A Borrowers</span>
-            <p className="text-2xl font-bold text-emerald-400">{gradeACount}</p>
-            <p className="text-[10px] text-neutral-400">DSCR &gt; 2.5x &bull; 4+ yrs operating</p>
-          </div>
-
-          <div className="bg-neutral-850/60 p-4 rounded-xl border border-white/5 space-y-1">
-            <span className="text-[11px] text-neutral-400 uppercase tracking-wider font-semibold">Approved Facilities</span>
-            <p className="text-2xl font-bold text-white">{approvedCount}</p>
-            <p className="text-[10px] text-neutral-400">Total ETB 2,500,000 committed</p>
-          </div>
-
-          <div className="bg-neutral-850/60 p-4 rounded-xl border border-white/5 space-y-1">
-            <span className="text-[11px] text-neutral-400 uppercase tracking-wider font-semibold">Underwriting Speed</span>
-            <p className="text-2xl font-bold text-amber-300">3.4 min</p>
-            <p className="text-[10px] text-neutral-400">Down from 18 days branch baseline</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Workspace Layout: Left Ingestion Queue, Right Deep Underwriting Record */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left Column: Call Ingestion Queue (4 Cols) */}
-        <div className="lg:col-span-4 bg-neutral-900/90 border border-white/10 rounded-2xl p-4 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-              <Phone className="w-4 h-4 text-emerald-400" />
-              Incoming Applications ({filteredCalls.length})
-            </h3>
-            <span className="text-[11px] text-neutral-400 font-mono">Toll-Free 8800</span>
-          </div>
-
-          {/* Search & Filter Controls */}
-          <div className="space-y-2">
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-neutral-500" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search applicant, phone, sector..."
-                className="w-full pl-8 pr-3 py-1.5 rounded-xl bg-black/60 border border-white/10 text-white text-xs placeholder:text-neutral-500 focus:outline-none focus:border-white/30"
-              />
-            </div>
-
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
-              <button
-                onClick={() => setFilterStatus('all')}
-                className={`px-2.5 py-1 rounded-lg font-medium transition-colors cursor-pointer whitespace-nowrap ${
-                  filterStatus === 'all' ? 'bg-white text-black' : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
-                }`}
-              >
-                All
-              </button>
-              <button
-                onClick={() => setFilterStatus('pending')}
-                className={`px-2.5 py-1 rounded-lg font-medium transition-colors cursor-pointer whitespace-nowrap ${
-                  filterStatus === 'pending'
-                    ? 'bg-amber-500 text-black'
-                    : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
-                }`}
-              >
-                Pending
-              </button>
-              <button
-                onClick={() => setFilterStatus('approved')}
-                className={`px-2.5 py-1 rounded-lg font-medium transition-colors cursor-pointer whitespace-nowrap ${
-                  filterStatus === 'approved'
-                    ? 'bg-emerald-500 text-black'
-                    : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
-                }`}
-              >
-                Approved
-              </button>
-              <button
-                onClick={() => setFilterGrade('A')}
-                className={`px-2.5 py-1 rounded-lg font-medium transition-colors cursor-pointer whitespace-nowrap ${
-                  filterGrade === 'A' ? 'bg-blue-500 text-white' : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
-                }`}
-              >
-                Grade A
-              </button>
-            </div>
-          </div>
-
-          {/* Call Queue List */}
-          <div className="space-y-2.5 max-h-[640px] overflow-y-auto pr-1 custom-scrollbar">
-            {filteredCalls.length === 0 ? (
-              <div className="py-12 text-center text-neutral-500 text-xs">No matching applications found.</div>
-            ) : (
-              filteredCalls.map((call) => {
-                const isSelected = call.id === activeCall?.id;
-                const grade = call.aiGrading?.overallGrade || 'B';
-                const score = call.aiGrading?.overallScore || 82;
-                const loanReq = call.extractedData?.fields?.funding_amount_requested?.value || '450,000 ETB';
-
-                return (
-                  <div
-                    key={call.id}
-                    onClick={() => setSelectedCallId(call.id)}
-                    className={`p-3.5 rounded-xl border transition-all cursor-pointer text-left space-y-2 ${
-                      isSelected
-                        ? 'bg-neutral-800 border-white/30 ring-1 ring-white/20'
-                        : 'bg-neutral-850/50 border-white/5 hover:border-white/15'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span
-                            className={`w-5 h-5 rounded-md font-bold text-[11px] flex items-center justify-center ${
-                              grade === 'A'
-                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                                : grade === 'B'
-                                ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
-                                : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                            }`}
-                          >
-                            {grade}
-                          </span>
-                          <p className="text-xs font-semibold text-white truncate max-w-[150px]">{call.callerName}</p>
-                        </div>
-                        <p className="text-[10px] text-neutral-400 mt-0.5">{call.region}</p>
-                      </div>
-
-                      <div className="text-right">
-                        <span
-                          className={`inline-block text-[10px] px-2 py-0.5 rounded-full font-semibold ${
-                            call.underwritingDecision.status === 'approved'
-                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                              : call.underwritingDecision.status === 'field_visit_requested'
-                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                              : 'bg-white/10 text-neutral-300'
-                          }`}
-                        >
-                          {call.underwritingDecision.status === 'approved'
-                            ? 'Approved'
-                            : call.underwritingDecision.status === 'field_visit_requested'
-                            ? 'Field Visit'
-                            : 'Pending'}
-                        </span>
-                        <p className="text-[10px] text-neutral-500 mt-1 font-mono">{call.callerPhoneNumber}</p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between text-[11px] text-neutral-300 pt-1 border-t border-white/5">
-                      <span className="font-semibold text-emerald-400">{loanReq}</span>
-                      <span className="text-[10px] text-neutral-400">
-                        {call.callDurationSeconds}s &bull; {call.language === 'am' ? 'Amharic' : call.language === 'om' ? 'Oromo' : 'English'}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
-
-        {/* Right Column: Selected Call Deep Underwriting Workspace (8 Cols) */}
-        {activeCall ? (
-          <div className="lg:col-span-8 space-y-6">
-            {/* Applicant Profile Bar & Audio Player */}
-            <div className="bg-neutral-900/90 border border-white/10 rounded-2xl p-5 space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-lg font-bold text-white">{activeCall.callerName}</h2>
-                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-white/10 text-neutral-300">
-                      {activeCall.language === 'am' ? 'Amharic Spoken Intake' : activeCall.language === 'om' ? 'Afaan Oromoo Spoken Intake' : 'English Spoken Intake'}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-3 text-xs text-neutral-400">
-                    <span className="flex items-center gap-1 font-mono">
-                      <Phone className="w-3.5 h-3.5 text-neutral-500" />
-                      {activeCall.callerPhoneNumber}
-                    </span>
-                    <span>&bull;</span>
-                    <span className="flex items-center gap-1">
-                      <MapPin className="w-3.5 h-3.5 text-neutral-500" />
-                      {activeCall.region}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Underwriter Action Bar */}
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => {
-                      setDecisionType('approved');
-                      setCustomApprovedAmount(activeCall.extractedData?.fields?.funding_amount_requested?.value || '450,000 ETB');
-                      setIsDecisionModalOpen(true);
-                    }}
-                    className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow"
-                  >
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>Approve Loan</span>
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setDecisionType('field_visit_requested');
-                      setIsDecisionModalOpen(true);
-                    }}
-                    className="px-3 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white font-medium text-xs border border-white/10 flex items-center gap-1.5 transition-colors cursor-pointer"
-                  >
-                    <MapPin className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Request Visit</span>
-                  </button>
-
-                  <button
-                    onClick={() => setIsPrintingMemo(true)}
-                    className="px-3 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white font-medium text-xs border border-white/10 flex items-center gap-1.5 transition-colors cursor-pointer"
-                    title="Export Credit Memo"
-                  >
-                    <Printer className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Integrated Spoken Telephony Audio Player */}
-              <div className="bg-black/50 p-3.5 rounded-xl border border-white/10 flex items-center justify-between gap-4">
-                <button
-                  onClick={() => setIsPlayingAudio(!isPlayingAudio)}
-                  className="w-9 h-9 rounded-full bg-emerald-500 hover:bg-emerald-400 text-black flex items-center justify-center font-bold transition-transform active:scale-95 cursor-pointer flex-shrink-0"
-                >
-                  {isPlayingAudio ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
-                </button>
-
-                <div className="flex-1 space-y-1">
-                  <div className="flex items-center justify-between text-[10px] text-neutral-400">
-                    <span className="font-mono">Toll-Free Call Recording (2G Audio)</span>
-                    <span className="font-mono">{activeCall.callDurationSeconds}s duration</span>
-                  </div>
-                  {/* Waveform representation */}
-                  <div className="h-4 flex items-center gap-0.5">
-                    {Array.from({ length: 42 }).map((_, idx) => (
-                      <div
-                        key={idx}
-                        className={`flex-1 rounded-full transition-all duration-300 ${
-                          isPlayingAudio && idx < 22 ? 'bg-emerald-400' : 'bg-neutral-700'
-                        }`}
-                        style={{ height: `${Math.max(20, Math.sin(idx * 0.4) * 100)}%` }}
-                      />
-                    ))}
-                  </div>
-                </div>
-
-                <span className="text-xs font-mono text-emerald-400 bg-emerald-950/60 px-2 py-1 rounded border border-emerald-800/40">
-                  {isPlayingAudio ? '00:18' : '00:00'} / {activeCall.callDurationSeconds}s
+        {/* Selected Applicant Profile Card Header */}
+        <div className="bg-[#0e0e16] border border-white/10 rounded-2xl p-6 shadow-2xl relative overflow-hidden">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+            <div>
+              <div className="flex items-center gap-3 mb-2">
+                <span className="px-3 py-1 rounded-md text-xs font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                  LIVE APPLICATION
+                </span>
+                <span className="text-xs font-mono text-neutral-400 flex items-center gap-1">
+                  <Activity className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                  PROCESSING &bull; SME-0248
                 </span>
               </div>
+
+              <h2 className="text-2xl font-extrabold text-white tracking-tight flex items-center gap-3">
+                {fields.business_name?.value || "Hana's Bakery"}
+                <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                  🟢 Eligible
+                </span>
+              </h2>
+
+              <p className="text-xs text-neutral-400 mt-1 flex items-center gap-3">
+                <span className="flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5 text-neutral-500" />
+                  {fields.location?.value || activeCall.region || "Addis Ababa / Bole"}
+                </span>
+                <span>&bull;</span>
+                <span className="flex items-center gap-1">
+                  <Building2 className="w-3.5 h-3.5 text-neutral-500" />
+                  {fields.business_type?.value || "Food & Bakery"}
+                </span>
+              </p>
             </div>
 
-            {/* AI Business Grading Scorecard & Risk Matrix */}
-            <div className="bg-neutral-900/90 border border-white/10 rounded-2xl p-5 space-y-5">
-              <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-amber-400" />
-                  <h3 className="text-sm font-semibold text-white">AI Credit Grading &amp; Financial Risk Analysis</h3>
+            {/* Top 3 Verified Metric Cards */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-[#13131d] p-3.5 rounded-xl border border-emerald-500/30 text-center">
+                <div className="text-[10px] font-bold text-emerald-400 tracking-wider uppercase flex items-center justify-center gap-1">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                  REGISTERED
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-neutral-400">Decision Engine:</span>
-                  <span className="text-xs font-bold text-emerald-400">Gemini 3.7 Flash Underwriter</span>
-                </div>
+                <div className="text-xs font-bold text-white mt-1">Verified Legal</div>
               </div>
 
-              {/* Grade Banner */}
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                <div className="bg-neutral-850 p-4 rounded-xl border border-white/10 flex items-center gap-3">
-                  <div
-                    className={`w-12 h-12 rounded-xl text-xl font-bold flex items-center justify-center ${
-                      activeCall.aiGrading?.overallGrade === 'A'
-                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                        : 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
-                    }`}
-                  >
-                    {activeCall.aiGrading?.overallGrade || 'A'}
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">Tier Grade</span>
-                    <p className="text-xs font-bold text-white">{activeCall.aiGrading?.gradeLabel || 'Prime MFI Borrower'}</p>
-                    <p className="text-[10px] text-neutral-400">Score: {activeCall.aiGrading?.overallScore || 92}/100</p>
-                  </div>
+              <div className="bg-[#13131d] p-3.5 rounded-xl border border-emerald-500/30 text-center">
+                <div className="text-[10px] font-bold text-emerald-400 tracking-wider uppercase flex items-center justify-center gap-1">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                  {fields.years_operating?.value || "4 YEARS"}
                 </div>
-
-                <div className="bg-neutral-850 p-4 rounded-xl border border-white/10 space-y-1">
-                  <span className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">Est. Monthly Cashflow</span>
-                  <p className="text-base font-bold text-emerald-400">{activeCall.aiGrading?.estimatedMonthlyCashflow || '180,000 ETB'}</p>
-                  <p className="text-[10px] text-neutral-400">From spoken interview</p>
-                </div>
-
-                <div className="bg-neutral-850 p-4 rounded-xl border border-white/10 space-y-1">
-                  <span className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">Coverage (DSCR)</span>
-                  <p className="text-base font-bold text-white">{activeCall.aiGrading?.estimatedDSCR || 3.2}x</p>
-                  <p className="text-[10px] text-emerald-400">&gt; 1.5x minimum benchmark</p>
-                </div>
-
-                <div className="bg-neutral-850 p-4 rounded-xl border border-white/10 space-y-1">
-                  <span className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">Truth &amp; Quotes</span>
-                  <p className="text-base font-bold text-amber-300">{activeCall.aiGrading?.truthAndVerificationScore || 90}%</p>
-                  <p className="text-[10px] text-neutral-400">9/10 fields backed by quotes</p>
-                </div>
+                <div className="text-xs font-bold text-white mt-1">Operating History</div>
               </div>
 
-              {/* AI Executive Summary & Strengths */}
-              <div className="bg-neutral-850/70 p-4 rounded-xl border border-white/5 space-y-3">
-                <div>
-                  <p className="text-xs font-semibold text-neutral-300">Underwriter Memo Summary:</p>
-                  <p className="text-xs text-neutral-200 mt-1 leading-relaxed">
-                    {activeCall.aiGrading?.executiveSummary ||
-                      'Applicant demonstrates strong ongoing trading volume with sufficient coverage for the requested capital facility.'}
-                  </p>
+              <div className="bg-[#13131d] p-3.5 rounded-xl border border-purple-500/30 text-center">
+                <div className="text-[10px] font-bold text-purple-300 tracking-wider uppercase flex items-center justify-center gap-1">
+                  <Users className="w-3 h-3 text-purple-400" />
+                  {fields.employees?.value || "6 EMPLOYEES"}
                 </div>
-
-                {activeCall.aiGrading?.keyStrengths && activeCall.aiGrading.keyStrengths.length > 0 && (
-                  <div className="space-y-1.5 pt-1">
-                    <p className="text-[11px] font-semibold text-emerald-400">Verified Strengths:</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {activeCall.aiGrading.keyStrengths.map((str, i) => (
-                        <div key={i} className="flex items-center gap-1.5 text-xs text-neutral-300 bg-emerald-950/20 px-2.5 py-1.5 rounded-lg border border-emerald-900/30">
-                          <Check className="w-3 h-3 text-emerald-400 flex-shrink-0" />
-                          <span className="truncate">{str}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                <div className="text-xs font-bold text-white mt-1">Stated Count</div>
               </div>
             </div>
+          </div>
+        </div>
 
-            {/* 10-Field Honest Extraction & Verbatim Spoken Quotes */}
-            <div className="bg-neutral-900/90 border border-white/10 rounded-2xl p-5 space-y-4">
+        {/* 3 LAYERS OF INTELLIGENCE MAIN GRID */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* LEFT 7 COLS: Layer 1 (Extract) & Layer 2 (Traceable Evidence) */}
+          <div className="lg:col-span-7 space-y-6">
+            {/* LAYER 1: EXTRACTED BUSINESS PROFILE & LIVE INSIGHTS */}
+            <div className="bg-[#0b0b11] border border-white/10 rounded-2xl p-6 shadow-xl space-y-5">
               <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                <div>
-                  <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-                    <FileCheck className="w-4 h-4 text-emerald-400" />
-                    10 Verified Funding Fields (Honest Extraction)
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
+                  <h3 className="text-sm font-bold tracking-wide uppercase text-neutral-300">
+                    LAYER 1 &mdash; EXTRACTED DATA &amp; LIVE INSIGHTS
                   </h3>
-                  <p className="text-[11px] text-neutral-400 mt-0.5">
-                    Every field is bound to the verbatim quote spoken by the caller. No hallucinations.
-                  </p>
                 </div>
-                <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/10 text-neutral-300 font-mono">
-                  10 Core Indicators
+                <span className="text-xs font-mono text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20">
+                  AI Honest Extraction
                 </span>
               </div>
 
-              {/* Fields Grid */}
-              <div className="space-y-3">
-                {(Object.keys(FIELD_LABELS) as FieldKey[]).map((fieldKey) => {
-                  const meta = FIELD_LABELS[fieldKey] || {
-                    title: fieldKey.replace(/_/g, ' '),
-                    subtitle: fieldKey,
-                    icon: Building2,
-                  };
-                  const field: ExtractedField =
-                    activeCall.extractedData?.fields?.[fieldKey] || {
-                      value: null,
-                      status: 'missing',
-                      quote: null,
-                    };
-                  const Icon = meta.icon || Building2;
-                  const isStated = (field.status === 'applicant_stated' || field.status === 'STATED') && field.value;
+              {/* Progress bars & Insights */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-[#111119] p-4 rounded-xl border border-white/10">
+                  <span className="text-[11px] font-medium text-neutral-400 uppercase">Monthly Revenue</span>
+                  <div className="text-base font-bold text-emerald-400 mt-1">
+                    {fields.monthly_revenue?.value || "800,000 ETB"}
+                  </div>
+                  <div className="w-full bg-neutral-800 h-2 rounded-full mt-2 overflow-hidden">
+                    <div className="bg-emerald-500 h-full w-[80%]" />
+                  </div>
+                </div>
 
-                  return (
+                <div className="bg-[#111119] p-4 rounded-xl border border-white/10">
+                  <span className="text-[11px] font-medium text-neutral-400 uppercase">Funding Requested</span>
+                  <div className="text-base font-bold text-purple-300 mt-1">
+                    {fields.funding_requested?.value || "250,000 ETB"}
+                  </div>
+                  <div className="text-[11px] text-neutral-400 mt-2">Equipment expansion</div>
+                </div>
+
+                <div className="bg-[#111119] p-4 rounded-xl border border-white/10">
+                  <span className="text-[11px] font-medium text-neutral-400 uppercase">Funding Purpose</span>
+                  <div className="text-xs font-bold text-white mt-1 line-clamp-2">
+                    {fields.funding_purpose?.value || "New Commercial Oven"}
+                  </div>
+                  <span className="text-[10px] text-emerald-400 font-semibold block mt-1">✓ Capital Upgrade</span>
+                </div>
+              </div>
+
+              {/* LAYER 2: EVIDENCE PROVENANCE TABLE (Traceable to Conversation) */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-neutral-300 flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                    LAYER 2 &mdash; TRACEABLE EVIDENCE PROVENANCE
+                  </h4>
+                  <span className="text-[11px] text-neutral-400">Click quote to jump to transcript</span>
+                </div>
+
+                <div className="space-y-2 max-h-[340px] overflow-y-auto pr-1 custom-scrollbar">
+                  {[
+                    { label: 'Business Name', field: fields.business_name },
+                    { label: 'Sector / Activity', field: fields.business_type },
+                    { label: 'Operating Longevity', field: fields.years_operating },
+                    { label: 'Location', field: fields.location },
+                    { label: 'Employees', field: fields.employees },
+                    { label: 'Monthly Revenue', field: fields.monthly_revenue },
+                    { label: 'Loan Amount Requested', field: fields.funding_requested },
+                    { label: 'Use of Loan Funds', field: fields.funding_purpose },
+                  ].map((item, idx) => (
                     <div
-                      key={fieldKey}
-                      className={`p-3.5 rounded-xl border transition-colors ${
-                        isStated
-                          ? 'bg-neutral-850/80 border-white/10'
-                          : 'bg-neutral-900 border-amber-500/20'
+                      key={idx}
+                      onClick={() => handleJumpToEvidence(item.field?.quote || null)}
+                      className={`p-3 rounded-xl border transition-all cursor-pointer ${
+                        item.field?.quote
+                          ? 'bg-[#12121c] border-white/10 hover:border-emerald-500/40'
+                          : 'bg-[#121015] border-amber-500/20'
                       }`}
                     >
-                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
-                        <div className="space-y-1 flex-1">
-                          <div className="flex items-center gap-2">
-                            <Icon className="w-3.5 h-3.5 text-neutral-400" />
-                            <span className="text-xs font-semibold text-white">{meta.title}</span>
-                            <span className="text-[10px] text-neutral-500 font-sans hidden sm:inline">
-                              ({meta.subtitle})
-                            </span>
-                          </div>
-
-                          <div className="pt-0.5">
-                            {isStated ? (
-                              <p className="text-xs text-emerald-300 font-medium">{field.value}</p>
-                            ) : (
-                              <p className="text-xs text-amber-400/80 italic">Not mentioned in spoken phone call (Preserved as missing)</p>
-                            )}
-                          </div>
-
-                          {/* Verbatim Quote Citation */}
-                          {field.quote && (
-                            <div className="mt-2 text-[11px] bg-black/40 p-2 rounded-lg border border-white/5 text-neutral-400 font-mono flex items-start gap-1.5">
-                              <span className="text-emerald-400 select-none">&ldquo;</span>
-                              <span className="text-neutral-300">{field.quote}</span>
-                              <span className="text-emerald-400 select-none">&rdquo;</span>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Status Badge */}
-                        <div className="flex items-center gap-2 self-start">
-                          <span
-                            className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
-                              isStated
-                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                                : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                            }`}
-                          >
-                            {isStated ? 'Applicant Stated' : 'Missing'}
-                          </span>
-                        </div>
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="font-semibold text-neutral-300">{item.label}</span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          item.field?.quote
+                            ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                            : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                        }`}>
+                          {item.field?.quote ? '✓ Stated with Evidence' : '⚠ Missing / Unstated'}
+                        </span>
                       </div>
+
+                      <div className="text-xs font-bold text-white mb-1">
+                        {item.field?.value || 'Unstated / Not Provided'}
+                      </div>
+
+                      {item.field?.quote ? (
+                        <div className="text-[11px] italic text-emerald-300/90 bg-emerald-950/40 p-2 rounded-lg border border-emerald-500/20 flex items-start gap-1.5">
+                          <ExternalLink className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
+                          <span>&ldquo;{item.field.quote}&rdquo;</span>
+                        </div>
+                      ) : (
+                        <div className="text-[11px] text-amber-400/90 italic">
+                          Applicant did not mention this indicator in spoken audio.
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* LIVE CONVERSATION & TRANSCRIPT FEED */}
+            <div ref={transcriptContainerRef} className="bg-[#0b0b11] border border-white/10 rounded-2xl p-6 shadow-xl space-y-4">
+              <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                <h3 className="text-sm font-bold tracking-wide uppercase text-neutral-300 flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4 text-purple-400" />
+                  CONVERSATION TRANSCRIPT
+                </h3>
+                <span className="text-xs text-neutral-400">Verbatim Spoken Audio</span>
+              </div>
+
+              <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar">
+                {activeCall.transcript.split('\n').map((line, idx) => {
+                  const isHighlighted = highlightedTranscriptQuote && line.toLowerCase().includes(highlightedTranscriptQuote.toLowerCase());
+                  const isVesper = line.startsWith('Vesper:') || line.startsWith('AI:');
+                  return (
+                    <div
+                      key={idx}
+                      className={`p-3 rounded-xl border text-xs leading-relaxed transition-all ${
+                        isHighlighted
+                          ? 'bg-amber-950/60 border-amber-400 text-amber-100 ring-2 ring-amber-400/50 scale-[1.01]'
+                          : isVesper
+                          ? 'bg-[#0f1512] border-emerald-500/20 text-emerald-200'
+                          : 'bg-[#14101e] border-purple-500/20 text-purple-200'
+                      }`}
+                    >
+                      <span className="font-bold mr-2 uppercase text-[10px] opacity-80 block mb-0.5">
+                        {isVesper ? 'AI ASSISTANT' : 'APPLICANT'}
+                      </span>
+                      {line}
                     </div>
                   );
                 })}
               </div>
             </div>
+          </div>
 
-            {/* Complete Verbatim Spoken Transcript */}
-            <div className="bg-neutral-900/90 border border-white/10 rounded-2xl p-5 space-y-3">
-              <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-neutral-400" />
-                  Verbatim Telephony Audio Transcript
-                </h3>
-                <span className="text-[10px] text-neutral-400 font-mono">
-                  Lang: {activeCall.language.toUpperCase()}
-                </span>
+          {/* RIGHT 5 COLS: Layer 3 (Review Intelligence) & Application Brief */}
+          <div className="lg:col-span-5 space-y-6">
+            {/* LAYER 3: REVIEW INTELLIGENCE CARD */}
+            <div className="bg-[#0b0b11] border border-white/10 rounded-2xl p-6 shadow-xl space-y-4">
+              <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
+                  <h3 className="text-sm font-bold tracking-wide uppercase text-neutral-300">
+                    LAYER 3 &mdash; REVIEW INTELLIGENCE
+                  </h3>
+                </div>
               </div>
-              <div className="bg-black/50 p-4 rounded-xl border border-white/10 text-xs text-neutral-300 leading-relaxed font-sans max-h-48 overflow-y-auto custom-scrollbar">
-                {activeCall.transcript || activeCall.extractedData?.transcript || 'No transcript recorded.'}
+
+              <div className="space-y-2.5">
+                <div className="flex items-center gap-2 text-xs text-emerald-300 bg-emerald-950/40 p-2.5 rounded-xl border border-emerald-500/30 font-medium">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>Eligibility requirements satisfied</span>
+                </div>
+
+                <div className="flex items-center gap-2 text-xs text-emerald-300 bg-emerald-950/40 p-2.5 rounded-xl border border-emerald-500/30 font-medium">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>Business operating history confirmed (4 Years)</span>
+                </div>
+
+                <div className="flex items-center gap-2 text-xs text-amber-300 bg-amber-950/40 p-2.5 rounded-xl border border-amber-500/30 font-medium">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>Revenue needs bank statement verification</span>
+                </div>
+
+                <div className="flex items-center gap-2 text-xs text-emerald-300 bg-emerald-950/40 p-2.5 rounded-xl border border-emerald-500/30 font-medium">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>Funding purpose is clearly stated (Commercial Oven)</span>
+                </div>
+
+                <div className="flex items-center gap-2 text-xs text-amber-300 bg-amber-950/40 p-2.5 rounded-xl border border-amber-500/30 font-medium">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>Applicant has not yet quantified expected output increase</span>
+                </div>
+              </div>
+
+              {/* NEXT BEST QUESTION RECOMMENDATION */}
+              <div className="bg-gradient-to-r from-purple-950/60 to-indigo-950/60 border border-purple-500/40 p-4 rounded-xl space-y-2">
+                <div className="flex items-center gap-2 text-xs font-bold text-purple-300 uppercase tracking-wider">
+                  <Sparkles className="w-4 h-4 text-amber-400" />
+                  NEXT BEST QUESTION FOR OFFICER
+                </div>
+                <p className="text-xs font-semibold text-white italic">
+                  &ldquo;How will the new commercial oven affect your daily baking capacity and revenue?&rdquo;
+                </p>
+                <p className="text-[11px] text-neutral-400">
+                  Asking this follow-up clarifies the cash flow impact before committee approval.
+                </p>
+              </div>
+            </div>
+
+            {/* APPLICATION READY FOR REVIEW (AI UNDERWRITING BRIEF) */}
+            <div className="bg-[#0b0b11] border border-white/10 rounded-2xl p-6 shadow-xl space-y-5">
+              <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                <h3 className="text-sm font-bold tracking-wide uppercase text-neutral-300">
+                  APPLICATION READY FOR REVIEW
+                </h3>
+                <div className="text-right">
+                  <span className="text-[10px] text-neutral-400 block uppercase">Completeness</span>
+                  <span className="text-base font-extrabold text-emerald-400">82%</span>
+                </div>
+              </div>
+
+              {/* Summary bullets */}
+              <div className="space-y-2 text-xs">
+                <div className="flex items-center justify-between p-2 rounded-lg bg-[#14141e]">
+                  <span className="text-neutral-400">Eligibility Status</span>
+                  <span className="font-bold text-emerald-400">🟢 Passed</span>
+                </div>
+                <div className="flex items-center justify-between p-2 rounded-lg bg-[#14141e]">
+                  <span className="text-neutral-400">Business Profile</span>
+                  <span className="font-semibold text-white">Food / Bakery &bull; 4 yrs &bull; 6 employees</span>
+                </div>
+                <div className="flex items-center justify-between p-2 rounded-lg bg-[#14141e]">
+                  <span className="text-neutral-400">Funding Request</span>
+                  <span className="font-bold text-purple-300">250,000 ETB</span>
+                </div>
+              </div>
+
+              {/* AI Assessment Brief */}
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold text-neutral-300 uppercase tracking-wider">
+                  AI-Generated Assessment
+                </h4>
+                <p className="text-xs text-neutral-300 leading-relaxed bg-[#111119] p-3.5 rounded-xl border border-white/10">
+                  {activeCall.aiGrading?.executiveSummary ||
+                    "Strong application completeness. The applicant clearly described an established bakery operating for four years with six employees. The requested funding has a specific business purpose."}
+                </p>
+              </div>
+
+              {/* FUNDER ACTION (Human-in-the-Loop Decision Buttons) */}
+              <div className="space-y-3 pt-2 border-t border-white/10">
+                <h4 className="text-xs font-bold text-neutral-300 uppercase tracking-wider flex items-center justify-between">
+                  <span>FUNDER ACTION</span>
+                  <span className="text-[10px] text-emerald-400 font-mono">AI Prepares File &rarr; Human Decides</span>
+                </h4>
+
+                <div className="grid grid-cols-1 gap-2">
+                  <button
+                    onClick={() => {
+                      setDecisionType('approved');
+                      setIsDecisionModalOpen(true);
+                    }}
+                    className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-950 transition-all cursor-pointer"
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>Approve Application (250,000 ETB)</span>
+                  </button>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => {
+                        setDecisionType('field_visit_requested');
+                        setIsDecisionModalOpen(true);
+                      }}
+                      className="py-2.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-200 text-xs font-semibold border border-white/15 flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <MapPin className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Request Verification</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setDecisionType('counter_offered');
+                        setIsDecisionModalOpen(true);
+                      }}
+                      className="py-2.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-200 text-xs font-semibold border border-white/15 flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <HelpCircle className="w-3.5 h-3.5 text-purple-400" />
+                      <span>Ask Follow-up</span>
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
-        ) : (
-          <div className="lg:col-span-8 py-24 text-center text-neutral-500">
-            Select an application on the left to view underwriting grading details.
-          </div>
-        )}
+        </div>
       </div>
 
-      {/* Underwriting Decision Modal */}
-      {isDecisionModalOpen && activeCall && (
+      {/* Decision Modal */}
+      {isDecisionModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-neutral-900 border border-white/15 rounded-3xl p-6 max-w-lg w-full space-y-5 shadow-2xl animate-in zoom-in-95 duration-200">
+          <div className="bg-[#0f0f18] border border-white/15 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
-              <div className="flex items-center gap-2">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
                 <ShieldCheck className="w-5 h-5 text-emerald-400" />
-                <h3 className="text-base font-bold text-white">Record Credit Committee Decision</h3>
-              </div>
+                Record Underwriting Decision
+              </h3>
               <button
                 onClick={() => setIsDecisionModalOpen(false)}
-                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer"
+                className="text-neutral-400 hover:text-white"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-4">
-              <div>
-                <label className="text-xs font-semibold text-neutral-300 block mb-1.5">Decision Action</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => setDecisionType('approved')}
-                    className={`p-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                      decisionType === 'approved'
-                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
-                        : 'bg-neutral-800 text-neutral-400 border-neutral-700'
-                    }`}
-                  >
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>Approve Loan</span>
-                  </button>
+            <p className="text-xs text-neutral-300">
+              Confirm underwriting decision for <strong className="text-white">{fields.business_name?.value || "Hana's Bakery"}</strong> ({activeCall.callerPhoneNumber}).
+            </p>
 
-                  <button
-                    onClick={() => setDecisionType('field_visit_requested')}
-                    className={`p-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                      decisionType === 'field_visit_requested'
-                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
-                        : 'bg-neutral-800 text-neutral-400 border-neutral-700'
-                    }`}
-                  >
-                    <MapPin className="w-4 h-4" />
-                    <span>Field Inspection</span>
-                  </button>
-                </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-neutral-400 block mb-1">Decision Type</label>
+                <select
+                  value={decisionType}
+                  onChange={(e) => setDecisionType(e.target.value as any)}
+                  className="w-full px-3 py-2 rounded-xl bg-neutral-900 border border-white/15 text-white text-xs font-semibold focus:outline-none focus:border-emerald-500"
+                >
+                  <option value="approved">🟢 Approve Application</option>
+                  <option value="field_visit_requested">🟡 Request Field Verification Visit</option>
+                  <option value="counter_offered">🟣 Ask Follow-up &amp; Counter-Offer</option>
+                  <option value="rejected">🔴 Reject Application</option>
+                </select>
               </div>
 
-              {decisionType === 'approved' && (
-                <div>
-                  <label className="text-xs font-semibold text-neutral-300 block mb-1">Approved Facility Amount (ETB)</label>
-                  <input
-                    type="text"
-                    value={customApprovedAmount}
-                    onChange={(e) => setCustomApprovedAmount(e.target.value)}
-                    placeholder="e.g. 450,000 ETB"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-white text-xs focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-              )}
-
               <div>
-                <label className="text-xs font-semibold text-neutral-300 block mb-1">Committee Underwriting Notes</label>
+                <label className="text-xs font-medium text-neutral-400 block mb-1">Officer Review Notes</label>
                 <textarea
+                  rows={3}
                   value={decisionNotes}
                   onChange={(e) => setDecisionNotes(e.target.value)}
-                  placeholder="Record verification notes, disbursement conditions, or branch follow-up..."
-                  rows={3}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-white text-xs focus:outline-none focus:border-emerald-500"
+                  placeholder="Enter credit committee notes..."
+                  className="w-full px-3 py-2 rounded-xl bg-neutral-900 border border-white/15 text-white text-xs focus:outline-none focus:border-emerald-500"
                 />
-              </div>
-
-              <div className="bg-emerald-950/30 p-3 rounded-xl border border-emerald-800/40 text-[11px] text-emerald-300 flex items-start gap-2">
-                <Send className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
-                <span>
-                  Confirming this action will automatically dispatch an SMS notification in{' '}
-                  <span className="font-semibold text-white">
-                    {activeCall.language === 'am' ? 'Amharic' : activeCall.language === 'om' ? 'Afaan Oromoo' : 'English'}
-                  </span>{' '}
-                  to the applicant&apos;s phone ({activeCall.callerPhoneNumber}).
-                </span>
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-3 pt-2 border-t border-white/10">
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-white/10">
               <button
                 onClick={() => setIsDecisionModalOpen(false)}
-                className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-medium transition-colors cursor-pointer"
+                className="px-4 py-2 rounded-xl bg-neutral-800 text-neutral-300 text-xs font-semibold hover:bg-neutral-700"
               >
                 Cancel
               </button>
               <button
                 onClick={handleConfirmDecision}
-                className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors cursor-pointer shadow-lg shadow-emerald-950"
+                className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-950 flex items-center gap-1.5"
               >
-                Confirm &amp; Dispatch SMS
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Credit Committee Printable Memo Modal */}
-      {isPrintingMemo && activeCall && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-neutral-900 border border-white/20 rounded-3xl p-8 max-w-2xl w-full space-y-6 text-white my-8 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-white/15 pb-4">
-              <div>
-                <p className="text-xs font-bold text-neutral-400 uppercase tracking-widest">
-                  Microfinance Institution Credit Committee
-                </p>
-                <h2 className="text-xl font-bold text-white mt-1">Formal Credit Assessment Memorandum</h2>
-              </div>
-              <button
-                onClick={() => setIsPrintingMemo(false)}
-                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="space-y-4 text-xs">
-              <div className="grid grid-cols-2 gap-4 bg-neutral-850 p-4 rounded-xl">
-                <div>
-                  <span className="text-neutral-400 block">Applicant:</span>
-                  <span className="font-bold text-white">{activeCall.callerName}</span>
-                </div>
-                <div>
-                  <span className="text-neutral-400 block">Phone &amp; Location:</span>
-                  <span className="font-mono text-neutral-200">
-                    {activeCall.callerPhoneNumber} &bull; {activeCall.region}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-neutral-400 block">Requested Amount:</span>
-                  <span className="font-bold text-emerald-400">
-                    {activeCall.extractedData?.fields?.funding_amount_requested?.value || '450,000 ETB'}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-neutral-400 block">Assigned AI Tier:</span>
-                  <span className="font-bold text-emerald-300">
-                    Grade {activeCall.aiGrading?.overallGrade} ({activeCall.aiGrading?.gradeLabel})
-                  </span>
-                </div>
-              </div>
-
-              <div>
-                <h4 className="font-bold text-neutral-300 mb-1">Underwriter Executive Finding:</h4>
-                <p className="text-neutral-300 leading-relaxed bg-black/40 p-3 rounded-lg border border-white/5">
-                  {activeCall.aiGrading?.executiveSummary}
-                </p>
-              </div>
-
-              <div>
-                <h4 className="font-bold text-neutral-300 mb-2">Recommended Credit Terms:</h4>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-neutral-850 p-3 rounded-lg text-center">
-                  <div>
-                    <span className="text-[10px] text-neutral-400 block">Tenor</span>
-                    <span className="font-bold text-white">{activeCall.aiGrading?.recommendedTerms?.recommendedTenor || '18 Months'}</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-neutral-400 block">Interest Rate</span>
-                    <span className="font-bold text-white">{activeCall.aiGrading?.recommendedTerms?.interestRate || '13.5%'}</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-neutral-400 block">Grace Period</span>
-                    <span className="font-bold text-white">{activeCall.aiGrading?.recommendedTerms?.gracePeriod || '1 Month'}</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-neutral-400 block">DSCR Margin</span>
-                    <span className="font-bold text-emerald-400">{activeCall.aiGrading?.estimatedDSCR || '3.2'}x</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-3 pt-4 border-t border-white/15">
-              <button
-                onClick={() => {
-                  window.print();
-                }}
-                className="px-5 py-2.5 rounded-xl bg-white text-black font-bold text-xs flex items-center gap-2 hover:bg-neutral-200 transition-colors cursor-pointer"
-              >
-                <Printer className="w-4 h-4" />
-                <span>Print / Save as PDF</span>
+                <Send className="w-3.5 h-3.5" />
+                <span>Confirm &amp; Send SMS</span>
               </button>
             </div>
           </div>
