@@ -8,7 +8,9 @@
 [![Runtime: Node.js](https://img.shields.io/badge/Runtime-Node.js%2020%2B-green.svg)]()
 [![Platform: Express%20%2B%20React](https://img.shields.io/badge/Stack-Express%20%7C%20React%20%7C%20Tailwind-black.svg)]()
 
-<!-- TODO: add banner image -->
+<p align="center">
+  <img src="landing%20page.png" alt="Vesper.ai MFI Underwriting Platform" width="100%" style="border-radius: 10px;" />
+</p>
 
 Over 75% of informal micro-entrepreneurs in emerging markets lack smartphones and formal digital literacy, locking them out of financial capital. Vesper.ai breaks this barrier by turning standard 2G/PSTN voice calls into verified, audit-ready microfinance credit packages. Borrowers dial a toll-free number on basic feature phones, speak naturally in Amharic, Afaan Oromoo, or English, and our multimodal AI extracts 10 core underwriting fields bound strictly to verbatim spoken quotes—no hallucinations, no silent guessing, and zero forms.
 
@@ -18,7 +20,13 @@ Over 75% of informal micro-entrepreneurs in emerging markets lack smartphones an
 
 - **Toll-Free Telephony Simulator:** Built-in Nokia/2G interactive keypad in the web console (`8800`)
 
-<!-- TODO: add demo GIF — record a call from language menu through to extracted results appearing -->
+<p align="center">
+  <img src="automated.gif" alt="Vesper.ai Automated Voice Extraction & Verification Demo" width="100%" style="border-radius: 10px;" />
+</p>
+
+<p align="center">
+  <img src="speak.png" alt="Vesper.ai Live Voice Intake Interface" width="100%" style="border-radius: 10px;" />
+</p>
 
 ---
 
