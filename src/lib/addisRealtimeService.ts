@@ -2,6 +2,8 @@
 // Input:  16kHz PCM16 mono -> Base64 JSON over WebSocket
 // Output: 24kHz PCM16 mono -> AudioBuffer playback
 
+import { transcriptAdapter } from './addisTranscriptAdapter';
+
 export type AddisRealtimeState =
   | 'IDLE'
   | 'CONNECTING'
@@ -82,7 +84,7 @@ const OUTPUT_SAMPLE_RATE = 24000;
 // AUDIO HELPERS
 // ============================================================
 
-function float32ToInt16PCM(
+export function float32ToInt16PCM(
   input: Float32Array
 ): Int16Array {
   const output = new Int16Array(input.length);
@@ -102,8 +104,8 @@ function float32ToInt16PCM(
   return output;
 }
 
-function arrayBufferToBase64(
-  buffer: ArrayBuffer
+export function arrayBufferToBase64(
+  buffer: ArrayBufferLike
 ): string {
   const bytes = new Uint8Array(buffer);
 
@@ -127,7 +129,7 @@ function arrayBufferToBase64(
   return btoa(binary);
 }
 
-function base64ToArrayBuffer(
+export function base64ToArrayBuffer(
   base64: string
 ): ArrayBuffer {
   const binary = atob(base64);
@@ -174,8 +176,48 @@ export class AddisRealtimeService {
   private activeSources:
     AudioBufferSourceNode[] = [];
 
-  private setupTimer:
-    ReturnType<typeof setTimeout> | null = null;
+  private speechStreakCount: number = 0;
+  private userAudioChunks: Float32Array[] = [];
+  private isCollectingUserAudio: boolean = false;
+  private sttInProgress: boolean = false;
+  private silenceBufferCount: number = 0;
+  private currentLanguage: string = 'am';
+  private setupTimer: ReturnType<typeof setTimeout> | null = null;
+
+  public setLanguage(lang: string) {
+    this.currentLanguage = lang;
+  }
+
+  private createWavBlob(pcm16: Int16Array, sampleRate: number = 16000): Blob {
+    const buffer = new ArrayBuffer(44 + pcm16.length * 2);
+    const view = new DataView(buffer);
+
+    const writeString = (v: DataView, offset: number, str: string) => {
+      for (let i = 0; i < str.length; i++) {
+        v.setUint8(offset + i, str.charCodeAt(i));
+      }
+    };
+
+    writeString(view, 0, 'RIFF');
+    view.setUint32(4, 36 + pcm16.length * 2, true);
+    writeString(view, 8, 'WAVE');
+    writeString(view, 12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeString(view, 36, 'data');
+    view.setUint32(40, pcm16.length * 2, true);
+
+    const pcmBytes = new Uint8Array(pcm16.buffer, pcm16.byteOffset, pcm16.byteLength);
+    const targetBytes = new Uint8Array(buffer, 44);
+    targetBytes.set(pcmBytes);
+
+    return new Blob([buffer], { type: 'audio/wav' });
+  }
 
   private diagnostics: DiagnosticsState = {
     hasMicPermission: false,
@@ -627,10 +669,9 @@ export class AddisRealtimeService {
       // CONNECT
       // --------------------------------------------------------
 
-      this.log(
-        'CONNECTING',
-        'Connecting to Addis Realtime WebSocket...'
-      );
+      if (!wsUrl) {
+        throw new Error('WebSocket URL could not be created. ADDIS_API_KEY missing.');
+      }
 
       this.socket =
         new WebSocket(wsUrl);
@@ -1221,12 +1262,7 @@ export class AddisRealtimeService {
   // ============================================================
 
   public interruptPlayback() {
-
-    for (
-      const source of
-      this.activeSources
-    ) {
-
+    for (const source of this.activeSources) {
       try {
         source.stop();
         source.disconnect();
@@ -1235,45 +1271,83 @@ export class AddisRealtimeService {
 
     this.activeSources = [];
 
-    if (
-      this.outputContext
-    ) {
-
-      this.nextPlayTime =
-        this.outputContext.currentTime;
+    if (this.outputContext) {
+      this.nextPlayTime = this.outputContext.currentTime;
     }
 
-    this.diagnostics
-      .playbackState =
-      'IDLE';
+    this.diagnostics.playbackState = 'IDLE';
 
-    if (
-      this.state ===
-      'VESPER_SPEAKING'
-    ) {
-
-      this.setState(
-        'LISTENING'
-      );
+    if (this.state === 'VESPER_SPEAKING') {
+      this.setState('LISTENING');
     }
 
     this.emitDiagnostics();
+  }
+
+  private async finalizeUserAudioSegment() {
+    if (this.userAudioChunks.length === 0 || this.sttInProgress) return;
+
+    const chunksToProcess = [...this.userAudioChunks];
+    this.userAudioChunks = [];
+
+    const totalLen = chunksToProcess.reduce((acc, c) => acc + c.length, 0);
+    const merged = new Float32Array(totalLen);
+    let offset = 0;
+    for (const chunk of chunksToProcess) {
+      merged.set(chunk, offset);
+      offset += chunk.length;
+    }
+
+    // Only send an utterance to STT if it contains enough audio (~300ms = 4800 samples at 16kHz)
+    if (merged.length < 4800) {
+      return;
+    }
+
+    this.sttInProgress = true;
+    try {
+      const int16 = float32ToInt16PCM(merged);
+      const wavBlob = this.createWavBlob(int16, INPUT_SAMPLE_RATE);
+
+      const pcmBlob = new Blob([int16.buffer as ArrayBuffer], { type: 'audio/pcm' });
+      this.callbacks.onUserSpeechSegment?.(pcmBlob);
+
+      console.log('[STT] Sending audio to Addis STT');
+
+      const formData = new FormData();
+      formData.append('audio', wavBlob, 'user-speech.wav');
+      formData.append('language', this.currentLanguage || 'am');
+
+      const response = await fetch('/api/addis/stt', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+      }
+
+      const data = await response.json();
+      console.log('[STT] Result:', data);
+
+      if (data.success && data.text && data.text.trim()) {
+        console.log('[TRANSCRIPT] Final user transcript:', data.text);
+        console.log('[ADDIS STT]', data.text, data.confidence);
+
+        transcriptAdapter.handleUserSpeech(data.text, true, data.confidence);
+      }
+    } catch (error) {
+      console.error('[STT] Failed:', error);
+    } finally {
+      this.sttInProgress = false;
+    }
   }
 
   // ============================================================
   // SEND TEXT
   // ============================================================
 
-  public sendClientPrompt(
-    text: string
-  ) {
-
-    if (
-      !this.socket ||
-      this.socket.readyState !==
-        WebSocket.OPEN ||
-      !this.setupComplete
-    ) {
+  public sendClientPrompt(text: string) {
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN || !this.setupComplete) {
       return;
     }
 
@@ -1427,7 +1501,101 @@ export class AddisRealtimeService {
         );
       }
 
-    }, 100);
+    }, 200);
+  }
+
+  public async speakTTS(text: string, language: string = 'am'): Promise<void> {
+    return new Promise<void>((resolve) => {
+      (async () => {
+        try {
+          this.setState('VESPER_SPEAKING');
+          this.log(this.state, `Speaking TTS: "${text}"`, 'info');
+
+          if (this.outputContext && this.outputContext.state === 'suspended') {
+            await this.outputContext.resume().catch(() => {});
+          }
+
+          const res = await fetch('/api/addis/tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text, language }),
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            if (data.audioBase64) {
+              const audioSrc = data.audioBase64.startsWith('data:')
+                ? data.audioBase64
+                : `data:audio/mp3;base64,${data.audioBase64}`;
+
+              const audio = new Audio(audioSrc);
+              this.diagnostics.playbackState = 'PLAYING';
+              this.emitDiagnostics();
+
+              const handleEnd = () => {
+                this.diagnostics.playbackState = 'IDLE';
+                if (this.state === 'VESPER_SPEAKING') {
+                  this.setState('LISTENING');
+                }
+                this.emitDiagnostics();
+                resolve();
+              };
+
+              audio.onended = handleEnd;
+              audio.onerror = (e) => {
+                console.warn('HTMLAudioElement error, attempting SpeechSynthesis fallback:', e);
+                this.speakFallbackSpeechSynthesis(text, language).then(handleEnd);
+              };
+
+              try {
+                await audio.play();
+                return;
+              } catch (playErr) {
+                console.warn('Audio.play() blocked, attempting SpeechSynthesis fallback:', playErr);
+                await this.speakFallbackSpeechSynthesis(text, language);
+                handleEnd();
+                return;
+              }
+            }
+          }
+        } catch (err: any) {
+          this.log(this.state, `TTS audio playback warning: ${err.message}`, 'warning');
+        }
+
+        await this.speakFallbackSpeechSynthesis(text, language);
+
+        if (this.state === 'VESPER_SPEAKING') {
+          this.setState('LISTENING');
+        }
+        resolve();
+      })();
+    });
+  }
+
+  private speakFallbackSpeechSynthesis(text: string, language: string): Promise<void> {
+    return new Promise<void>((resolve) => {
+      if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+        resolve();
+        return;
+      }
+      try {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = language === 'am' ? 'am-ET' : language === 'om' ? 'om-ET' : 'en-US';
+        utterance.rate = 0.95;
+
+        utterance.onend = () => resolve();
+        utterance.onerror = () => resolve();
+
+        window.speechSynthesis.speak(utterance);
+      } catch {
+        resolve();
+      }
+    });
+  }
+
+  public async speakGreeting(text: string, language: string = 'am') {
+    return this.speakTTS(text, language);
   }
 
   // ============================================================
