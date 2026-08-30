@@ -1,24 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Language } from '../types';
 import { AddisRealtimeService, AddisRealtimeState, AddisErrorCategory } from '../lib/addisRealtimeService';
+import { getGreeting, getEligibilityQuestion, getEligibilityResponse } from '../lib/library';
 
 export interface LiveUtterance { id: string; speaker: 'owner' | 'vesper' | 'system'; speakerLabel: string; text: string; timestamp: string; language: Language; confidence?: number; }
 
-const greeting = 'ሰላም፣ ወደ Sequa SME Support እንኳን በደህና መጡ።';
-const eligibility = 'Before any application questions, complete this exact eligibility gate: greet the applicant first, then ask question 1 exactly: “Is your business legally registered, and has your SME or parent organization been operating for more than 2 years?” Only if they clearly pass, ask question 2 exactly: “Is your business privately owned, rather than state-owned?” If they do not qualify, politely thank them and end the conversation without revealing internal rules or saying they failed. If an answer is ambiguous, ask one brief clarification. Preserve the applicant’s exact answers in the transcript. After both clear passes say exactly: “Thank you. You appear to meet the initial eligibility requirements. Let’s talk about your business.” Then begin a natural SME Support Scheme interview.';
-const instruction = (language: Language) => language === 'am' ? `You are Sequa SME Support. Speak only natural Amharic. Be warm and conversational, not a rigid questionnaire. ${eligibility} Begin by saying exactly: ${greeting}, then ask the two eligibility questions in natural Amharic, in order, before any application questions.` : language === 'om' ? `You are Sequa SME Support. Speak natural Afaan Oromoo. Be warm and conversational. ${eligibility} Begin with a short Afaan Oromoo greeting, then ask the two eligibility questions in order before any application questions.` : `You are Sequa SME Support. Speak natural English. Be warm and conversational. ${eligibility} Begin with a short greeting, then ask the two eligibility questions in order before any application questions.`;
+const instruction = (language: Language) => `You are Sequa SME Support, an Ethiopian SME funding assistant. Speak ${language === 'am' ? 'natural Amharic' : language === 'om' ? 'natural Afaan Oromoo' : 'natural English'}. After the eligibility gate, have a friendly natural conversation, ask one follow-up at a time, and never invent information. Understand the business, sector, location, employees, revenue, funding purpose, amount requested, and jobs created.`;
 
 export function useAddisRealtime({ language, onFieldUpdate: _onFieldUpdate }: { language: Language; onFieldUpdate?: (fields: unknown, notes: string) => void }) {
   const [state, setState] = useState<AddisRealtimeState>('IDLE');
   const [transcriptLogs, setTranscriptLogs] = useState<LiveUtterance[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const serviceRef = useRef<AddisRealtimeService | null>(null);
+  const gateRef = useRef<1 | 2 | 'done'>(1);
 
   useEffect(() => {
     const service = new AddisRealtimeService({
       onStateChange: setState,
       onVesperSpeechText: (text) => setTranscriptLogs((items) => [...items, { id: crypto.randomUUID(), speaker: 'vesper', speakerLabel: 'SEQUA', text, timestamp: new Date().toISOString(), language }]),
       onUserSpeechSegment: async (audioBlob) => {
+        if (gateRef.current === 'done') return;
         try {
           const bytes = new Uint8Array(await audioBlob.arrayBuffer());
           let binary = ''; for (const byte of bytes) binary += String.fromCharCode(byte);
@@ -26,11 +27,20 @@ export function useAddisRealtime({ language, onFieldUpdate: _onFieldUpdate }: { 
           if (!response.ok) throw new Error('Transcription failed');
           const result = await response.json();
           const text = result.text ?? result.data?.transcription;
-          if (text) setTranscriptLogs((items) => [...items, { id: crypto.randomUUID(), speaker: 'owner', speakerLabel: 'YOU', text, timestamp: new Date().toISOString(), language, confidence: result.confidence }]);
+          if (text) {
+            setTranscriptLogs((items) => [...items, { id: crypto.randomUUID(), speaker: 'owner', speakerLabel: 'YOU', text, timestamp: new Date().toISOString(), language, confidence: result.confidence }]);
+            const normalized = text.toLowerCase();
+            const positive = /^(yes|yeah|yep|የ|አዎ|አዎን|እሺ|eeyyee|eyyee|dhugaa)/i.test(normalized);
+            const negative = /^(no|nope|not|አይ|አይደለም|lakki|miti)/i.test(normalized);
+            if (!positive && !negative) return;
+            if (negative) { gateRef.current = 'done'; await serviceRef.current?.speakGreeting(getEligibilityResponse(language === 'om' ? 'en' : language, false), language); serviceRef.current?.stop(); return; }
+            if (gateRef.current === 1) { gateRef.current = 2; await serviceRef.current?.speakGreeting(getEligibilityQuestion(language === 'om' ? 'en' : language, 2), language); }
+            else { gateRef.current = 'done'; await serviceRef.current?.speakGreeting(getEligibilityResponse(language === 'om' ? 'en' : language, true), language); serviceRef.current?.sendClientPrompt(instruction(language)); }
+          }
         } catch (error) { console.warn('[v0] Addis transcription failed', error); }
       },
       onError: (_category: AddisErrorCategory, message) => setErrorMessage(message),
-      onSetupComplete: () => service.sendClientPrompt(instruction(language)),
+      onSetupComplete: async () => { gateRef.current = 1; await service.speakGreeting(getGreeting(language === 'om' ? 'en' : language), language); await service.speakGreeting(getEligibilityQuestion(language === 'om' ? 'en' : language, 1), language); },
     });
     serviceRef.current = service;
     return () => service.stop();

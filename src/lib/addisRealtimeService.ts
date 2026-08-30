@@ -614,7 +614,8 @@ export class AddisRealtimeService {
   public async speakGreeting(text: string, language: string = 'am') {
     try {
       this.setState('VESPER_SPEAKING');
-      this.log(this.state, `Speaking Vesper greeting: "${text}"`, 'info');
+      this.callbacks.onVesperSpeechText?.(text);
+      this.log(this.state, `Speaking Sequa prompt: "${text}"`, 'info');
 
       const res = await fetch('/api/addis/tts', {
         method: 'POST',
@@ -629,15 +630,16 @@ export class AddisRealtimeService {
           this.diagnostics.playbackState = 'PLAYING';
           this.emitDiagnostics();
 
-          audio.onended = () => {
-            this.diagnostics.playbackState = 'IDLE';
-            if (this.state === 'VESPER_SPEAKING') {
-              this.setState('LISTENING');
-            }
-            this.emitDiagnostics();
-          };
-
-          await audio.play();
+          await new Promise<void>(async (resolve, reject) => {
+            audio.onended = () => {
+              this.diagnostics.playbackState = 'IDLE';
+              if (this.state === 'VESPER_SPEAKING') this.setState('LISTENING');
+              this.emitDiagnostics();
+              resolve();
+            };
+            audio.onerror = () => reject(new Error('Addis TTS audio could not play'));
+            try { await audio.play(); } catch (error) { reject(error); }
+          });
           return;
         }
       }
